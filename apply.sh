@@ -29,6 +29,10 @@ cp "$HERE/board_smktec_s3_touch_lcd_154.c" "$SDK/components/muse/boards/"
 echo "== copying IMU engine =="
 cp "$HERE/muse_imu.c" "$HERE/muse_imu.h" "$SDK/components/muse/"
 
+echo "== copying gate + identity =="
+cp "$HERE/muse_gate.c" "$HERE/muse_gate.h" "$SDK/components/muse/"
+cp "$HERE/muse_identity.c" "$HERE/muse_identity.h" "$SDK/components/muse/"
+
 echo "== copying avatar renderer =="
 mkdir -p "$SDK/components/muse/avatar"
 cp "$HERE/avatar/muse_pixel.c" "$SDK/components/muse/avatar/muse_pixel.c"
@@ -75,26 +79,30 @@ s = s.replace(
   '''    elseif(CONFIG_MUSE_BOARD_AIPI)
         list(APPEND srcs "boards/board_aipi.c")
     elseif(CONFIG_MUSE_BOARD_SMKTEC_S3_TOUCH_LCD_154)
-        list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c" "muse_imu.c")''')
+        list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c" "muse_imu.c" "muse_gate.c" "muse_identity.c")''')
 open(p, 'w').write(s)
 print("CMakeLists updated")
 EOF
 else
   echo "CMakeLists already patched (board branch)"
 fi
-if ! grep -q '"muse_imu.c"' "$CMK"; then
+if ! grep -q '"muse_gate.c"' "$CMK"; then
   python3 - "$CMK" <<'EOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
+# Fresh board branch (no extra srcs yet) or the older imu-only form.
 s = s.replace(
   'list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c")',
-  'list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c" "muse_imu.c")')
+  'list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c" "muse_imu.c" "muse_gate.c" "muse_identity.c")')
+s = s.replace(
+  'list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c" "muse_imu.c")',
+  'list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c" "muse_imu.c" "muse_gate.c" "muse_identity.c")')
 open(p, 'w').write(s)
-print("CMakeLists updated (muse_imu.c)")
+print("CMakeLists updated (muse_gate.c, muse_identity.c)")
 EOF
 else
-  echo "CMakeLists already patched (muse_imu.c)"
+  echo "CMakeLists already patched (muse_gate.c)"
 fi
 
 echo "== idf_component.yml =="

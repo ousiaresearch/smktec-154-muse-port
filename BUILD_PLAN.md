@@ -64,6 +64,27 @@ scaffolding can start before Phase 1 finishes.
 6. **State on screen**: a settings-screen page showing the health summary
    (the return-line idea, made visible).
 
+## Phase 2b — Personalization v1 (bare board only)
+
+Scoped 2026-10-03: no external sensors, no organ bus. The board's own
+senses — ears, voice, touch, balance, memory, face — are enough for a
+creature. Spec: `PERSONALIZATION.md`.
+
+| # | Item | Module | Status |
+|---|---|---|---|
+| 1 | Instance identity (NVS: name, owner, birth, boot count, generation) | `muse_identity.c` | drafted, needs Mac build |
+| 2 | Decision gate as middleware (26 rules, PROCEED/CAUTION/VETO + reason) | `muse_gate.c` | done, host-tested 16/16, 10/10 parity vs Python |
+| 3 | Sleep consolidation + dream report | `muse_brain.c` + SD diary | scaffold after Phase 2 |
+| 4 | "Remember this" memory prosthetic | `muse_brain.c` + voice cmd | scaffold after Phase 2 |
+| 5 | Personal wake word "Lapis" | ESP-SR / KWS pipeline | after bring-up (needs mics) |
+| 6 | Speaker-ID (household members) | on-device audio classifier | after wake word works |
+| 7 | Adaptive thresholds from the diary | `muse_brain.c` | after consolidation lands |
+| 8 | Gesture personalization (IMU) | `muse_imu.c` extension | after bring-up |
+
+Wire-in order on the Mac: identity init first (every boot mints or
+loads the self), gate available to the board file as soon as
+`muse_brain.c` feeds it readings. Face shows gate state from day one.
+
 ## Phase 3 — Research instrument
 
 1. **Time-series logging** of brain-state to SD — the dataset.
@@ -80,12 +101,15 @@ not novelty.
 
 ---
 
-## Decisions needed from Anduril
+## Decisions (answered by Anduril, 2026-10-02)
 
-1. **SDK token timing** — needed before first build (step 1).
-2. **v1 subsystem scope** — proposed: scn, somatic, fatigue, lc, dmn,
-   hippocampus, decisions. Add/remove?
-3. **Diary privacy** — the SD card holds the day's interactions in plain
-   text. Fine, or encrypt at rest?
-4. **Upstream** — contribute the board port back to the SDK repo once
-   stable? (The avatar stays ours.)
+1. **SDK token** — provided in chat. Goes into `build-154/sdkconfig`
+   (`CONFIG_GADGET_SDK_TOKEN`) on the Mac before first build. Never committed.
+2. **Subsystem scope** — map as many of the 25 as possible; for unmappable
+   ones, research concrete hardware additions or plugins to close the gap.
+   (See BIOMIMETIC.md v2 mapping, in progress.)
+3. **Diary privacy** — plain text on the SD card. Anduril will use a
+   dedicated microSD (not his Switch card — don't share cards between
+   devices; any card works after FAT32 format, but keep one for the muse).
+4. **Upstream** — yes: contribute the board port back to the SDK repo once
+   stable. The avatar renderer stays ours.
