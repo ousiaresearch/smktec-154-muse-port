@@ -6,6 +6,18 @@ exact model (`main/boards/waveshare/esp32-s3-touch-lcd-1.54/config.h`) and the
 Waveshare spec sheet. **Verify on arrival** — clones usually copy the
 reference design pin-for-pin, but one wrong pin = silent failure.
 
+The SMKTelec listing additionally confirms: S3R8 @ 240MHz, 512KB SRAM,
+8MB PSRAM, 16MB flash, WiFi + BT5 LE, ES7210 dual-mic **with echo
+cancellation**, ES8311 + NS4150B, QMI8658, MX1.25 battery header, TF slot,
+onboard antenna.
+
+**Expansion (listing claim, VERIFY on hardware):** "Adapting I2C, UART,
+and other pin pads for external device connection and debugging." The
+"What's On Board" diagram doesn't label them — tomorrow's PCB photo must
+confirm which pads exist, their labels, and voltage (3.3V expected). If
+I2C pads are exposed, the BH1750/BME280/MAX30102 modules wire up cleanly
+and the "closed sandwich" verdict is withdrawn.
+
 ## Chip / memory / USB
 
 | Item | Value |
@@ -65,6 +77,9 @@ is proven in the SDK, just wired to different pins here.
 | PWR | 5 | → push-to-talk |
 | PLUS | 4 | Custom button; unassigned in v1 (see TODO in board file) |
 | BOOT | 0 | → aux/setup; BOOT on S3 |
+
+Listing: all three buttons support single-click, double-click, and long
+press — the gesture engine / menu can use press patterns, not just presses.
 
 ## Power / battery
 
