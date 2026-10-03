@@ -41,6 +41,7 @@
 #include "esp_log.h"
 #include "esp_lv_adapter.h"
 #include "esp_sleep.h"
+#include "esp_sntp.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -52,6 +53,10 @@
 #include "muse_identity.h"
 #include "muse_mem.h"
 #include "muse_state.h"
+#include "muse_turn_gate.h"
+
+#include <string.h>
+#include <time.h>
 
 static const char *TAG = "board";
 
@@ -104,6 +109,13 @@ static muse_identity_t s_identity;
 static muse_brain_state_t s_brain;
 static bool s_brain_ready = false;
 
+/* SNTP sync notice: the diary timestamps and quiet hours go live here. */
+static void sntp_sync_cb(struct timeval *tv)
+{
+    (void)tv;
+    ESP_LOGI(TAG, "SNTP synced");
+}
+
 static esp_err_t init(void)
 {
     /* Enable the battery path (xiaozhi PowerON()). */
@@ -137,6 +149,16 @@ static esp_err_t init(void)
     /* TODO: calibrate the divider levels on hardware (see read_power). */
     esp_err_t adc_err = adc_oneshot_config_channel(s_adc, BATT_ADC_CH, &ch_cfg);
 
+    /* SNTP: wall-clock time for diary timestamps, quiet hours, and the
+     * SCN phase. Best-effort — runs whenever Wi-Fi is up, harmless
+     * without it. VERIFY on IDF v6.0.1: esp_sntp API names. */
+    setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0/2", 1);  /* TODO: settings page */
+    tzset();
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_set_time_sync_notification_cb(sntp_sync_cb);
+    esp_sntp_init();
+
     /* The creature wakes up as someone: identity first (NVS mint or load),
      * then the diary (best-effort SD mount), then the brain with the diary
      * as its log sink. None of this fails the boot. */
@@ -145,6 +167,7 @@ static esp_err_t init(void)
     muse_diary_init();
     muse_brain_init(&s_brain, muse_diary_append);
     muse_brain_learning_restore(&s_brain, &s_identity);  /* capability baseline */
+    muse_turn_gate_attach(&s_brain, &s_identity);       /* PTT middleware */
     s_brain_ready = true;
     return adc_err;
 }
@@ -427,6 +450,12 @@ muse_brain_state_t *smktec_brain(void)
     return s_brain_ready ? &s_brain : NULL;
 }
 
+/* Identity accessor for the vitals page and the context hook. */
+muse_identity_t *smktec_identity(void)
+{
+    return s_brain_ready ? &s_identity : NULL;
+}
+
 /* Called on SLEEPY entry: the muse dreams (diary via the log sink).
  * Growth is evaluated here; the identity is persisted afterwards. */
 void smktec_note_sleepy(bool entering)
@@ -458,6 +487,18 @@ static esp_err_t read_power(muse_power_t *out)
         if (out->battery_mv > 0)
             muse_brain_feed_battery(&s_brain, out->battery_mv / 1000.0f,
                                     charging, now_ms);
+        /* Wall-clock circadian: once SNTP has set the clock, quiet hours
+         * (22:00–07:00 local) and the SCN phase come from real time. */
+        time_t t = time(NULL);
+        if (t >= 1700000000) {
+            struct tm tm;
+            if (localtime_r(&t, &tm)) {
+                bool quiet = tm.tm_hour >= 22 || tm.tm_hour < 7;
+                float phase = (tm.tm_hour * 3600 + tm.tm_min * 60 + tm.tm_sec)
+                              / 86400.0f;
+                muse_brain_set_quiet_hours(&s_brain, quiet, phase, now_ms);
+            }
+        }
         muse_brain_tick(&s_brain, now_ms, muse_state_asleep());
     }
     return ESP_OK;

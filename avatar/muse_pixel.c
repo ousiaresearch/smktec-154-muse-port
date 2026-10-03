@@ -152,6 +152,9 @@ static const uint32_t FIXED[C_COUNT] = {
 
 static rgb_t s_scheme[5];      /* live, blended: f0..f3, acc */
 static bool s_scheme_init;
+/* Verdict aura (muse_turn_gate): 0 none/proceed, 1 caution, 2 veto.
+ * Tints the rim light; the face shows the gate's decision. */
+static int s_verdict = 0;
 static uint16_t s_pal[C_COUNT];
 static uint16_t s_pal_dim[C_COUNT];
 
@@ -272,6 +275,12 @@ static void update_palette(const scheme_t *target, float dt)
     pal[C_G3] = s_scheme[3];
     pal[C_ACC] = acc;
     pal[C_RIM] = mix(pal[C_BL], acc, 0.45f);
+    /* Verdict aura (muse_turn_gate): the gate's decision tints the rim
+     * light. CAUTION amber, VETO red. Set via muse_pixel_set_verdict(). */
+    if (s_verdict == 1)
+        pal[C_RIM] = mix(pal[C_RIM], hex_rgb(0xffb020), 0.7f);
+    else if (s_verdict >= 2)
+        pal[C_RIM] = mix(pal[C_RIM], hex_rgb(0xff2a2a), 0.7f);
     pal[C_AURA1] = scale_rgb(acc, 0.16f);
     pal[C_AURA2] = scale_rgb(acc, 0.34f);
     pal[C_SPK] = mix(acc, pal[C_WHITE], 0.45f);
@@ -370,6 +379,11 @@ static void stamp(const char *const *rows, int nrows, int x0, int y0, uint8_t fi
  * components/muse/muse_pixel.h.
  * ------------------------------------------------------------------------- */
 static int s_facing = 0;   /* -1 left, 0 center, 1 right, 2 up */
+
+void muse_pixel_set_verdict(int verdict)
+{
+    s_verdict = verdict < 0 ? 0 : (verdict > 2 ? 2 : verdict);
+}
 
 void muse_pixel_set_facing(int dir)
 {
