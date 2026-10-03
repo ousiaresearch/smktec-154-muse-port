@@ -349,6 +349,29 @@ int main(void)
           strstr(snap18, "\"gamma\"") != NULL,
           "doya: snapshot reports the modulators");
 
+    /* L1 Minkowski drive + HRRL reward (SYSTEMS.md step 5):
+     * d = (Σ|dev|^m)^(1/n); r = d_prev − d. */
+    muse_brain_state_t b19;
+    muse_brain_init(&b19, cap_log);
+    muse_brain_feed_battery(&b19, 3.2f, false, 1000);  /* drive 0.63 */
+    muse_brain_tick(&b19, 2000, false);                /* seed */
+    CHECK(fabsf(b19.drive_reward) < 1e-6f,
+          "reward: seeded tick earns nothing");
+    muse_brain_feed_battery(&b19, 4.1f, true, 4000);   /* drive falls */
+    muse_brain_tick(&b19, 4000, false);
+    CHECK(b19.drive_reward > 0.5f,
+          "reward: drive reduction is positive reward");
+    muse_brain_feed_battery(&b19, 3.2f, false, 6000);  /* drive rises */
+    muse_brain_tick(&b19, 6000, false);
+    CHECK(b19.drive_reward < -0.5f,
+          "reward: drive increase is negative reward");
+    CHECK(fabsf(b19.drive_prev - 0.6333f) < 0.01f,
+          "drive: Minkowski matches Euclidean at m=n=2");
+    char snap19[1152];
+    CHECK(muse_brain_snapshot(&b19, NULL, snap19, sizeof(snap19)) > 0 &&
+          strstr(snap19, "\"reward\"") != NULL,
+          "reward: snapshot reports it");
+
     printf(failures ? "\n%d FAILURES\n" : "\nall brain tests passed\n", failures);
     return failures != 0;
 }

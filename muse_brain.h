@@ -50,6 +50,13 @@ extern "C" {
 #define MUSE_SETPOINT_FATIGUE 0.15f
 #define MUSE_SETPOINT_TENSION 0.20f
 
+/* Homeostatic drive shape (Yoshida et al., Keramati & Gutkin):
+ * d = (Σ|dev_i|^m)^(1/n). m=n=2 → Euclidean (firmware default).
+ * m>n>1 gives deprivation potentiation, cross-need competition, and
+ * concave (risk-averse) reward — free from the geometry. */
+#define MUSE_DRIVE_M 2.0f
+#define MUSE_DRIVE_N 2.0f
+
 /* L2 valence (SYSTEMS.md): the emotion quadrant from Joffily &
  * Coricelli — sign(velocity of improvement) × sign(acceleration).
  * Relief/disappointment are sign flips of the derivative itself. */
@@ -153,6 +160,9 @@ typedef struct {
      * aren't in the drive model. Decays over minutes. */
     float drive_prev;     /* raw drive at the previous tick */
     bool drive_seeded;    /* false until the first fresh tick seeds it */
+    float drive_reward;   /* HRRL reward r = d_prev − d: drive reduction
+                           * this tick. Positive = the situation improved.
+                           * Unclamped; v_fast is this × gain + pulse. */
     float affect_pulse;   /* -1..1 transient event input to valence */
     muse_emotion_t emotion;
     /* L6 boredom (Yu et al. HHVG, SYSTEMS.md): boredom = familiarity ×

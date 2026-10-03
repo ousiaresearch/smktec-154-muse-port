@@ -39,20 +39,24 @@ static bool aged(uint32_t updated_ms, uint32_t now_ms, uint32_t budget_ms)
     return (now_ms - updated_ms) > budget_ms;
 }
 
-/* Raw homeostatic drive magnitude (Keramati & Gutkin): Euclidean norm
- * of the per-drive deviations from setpoint. Stale subsystems
- * contribute nothing — no invented needs. Shared by tick() (for the
- * valence differentiator) and muse_brain_drive() (the public API). */
+/* Raw homeostatic drive magnitude (Keramati & Gutkin, Yoshida):
+ * Minkowski distance d = (Σ|dev_i|^m)^(1/n) over the per-drive
+ * deviations from setpoint. Stale subsystems contribute nothing —
+ * no invented needs. Shared by tick() (for the valence
+ * differentiator and the reward signal) and muse_brain_drive(). */
 static float raw_drive(const muse_brain_state_t *b)
 {
-    float hunger = 0, tired = 0, tense = 0;
+    float dev[3] = { 0.0f, 0.0f, 0.0f };
     if (!b->somatic.stale)
-        hunger = CLAMP01(MUSE_SETPOINT_ENERGY - b->somatic.energy);
+        dev[0] = CLAMP01(MUSE_SETPOINT_ENERGY - b->somatic.energy);
     if (!b->fatigue.stale)
-        tired = CLAMP01(b->fatigue.level - MUSE_SETPOINT_FATIGUE);
+        dev[1] = CLAMP01(b->fatigue.level - MUSE_SETPOINT_FATIGUE);
     if (!b->somatic.stale)
-        tense = CLAMP01(b->somatic.tension - MUSE_SETPOINT_TENSION);
-    float mag = sqrtf(hunger * hunger + tired * tired + tense * tense);
+        dev[2] = CLAMP01(b->somatic.tension - MUSE_SETPOINT_TENSION);
+    float s = 0.0f;
+    for (int i = 0; i < 3; i++)
+        s += powf(dev[i], MUSE_DRIVE_M);
+    float mag = powf(s, 1.0f / MUSE_DRIVE_N);
     return mag > 1.0f ? 1.0f : mag;
 }
 
@@ -80,9 +84,11 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
             /* First fresh tick: seed the differentiator, no feeling yet. */
             b->drive_prev = d;
             b->drive_seeded = true;
+            b->drive_reward = 0.0f;
             v = b->affect_pulse;
         } else {
             float v_body = -(d - b->drive_prev) * MUSE_VALENCE_GAIN;
+            b->drive_reward = b->drive_prev - d;   /* HRRL: reward = Δdrive */
             b->drive_prev = d;
             v = v_body + b->affect_pulse;
         }
@@ -106,6 +112,7 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
          * invent a velocity. */
         b->somatic.valence *= MUSE_DECAY_FAST;
         b->affect_pulse *= MUSE_DECAY_MEDIUM;
+        b->drive_reward = 0.0f;
         b->emotion = MUSE_EMO_CALM;
         b->drive_seeded = false;
     }
@@ -518,7 +525,7 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
         "\"energy\":%.2f,\"tension\":%.2f,\"arousal\":%.2f,\"valence\":%.2f,"
         "\"emotion\":\"%s\",\"boredom\":%.2f,"
         "\"gamma\":%.2f,\"alpha\":%.2f,"
-        "\"mood\":%.2f,\"drive\":%.2f,\"need\":\"%s\","
+        "\"mood\":%.2f,\"drive\":%.2f,\"reward\":%.2f,\"need\":\"%s\","
         "\"fatigue\":%.2f,\"quiet\":%s,\"phase\":%.2f,"
         "\"gate\":\"%s\",\"gate_why\":\"%s\","
         "\"interactions\":%lu,\"stale\":[%s]}",
@@ -534,7 +541,7 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
         (double)b->ht_gamma,
         (double)b->ach_alpha,
         b->somatic.stale ? -9.0 : (double)b->somatic.mood,
-        (double)drive, need,
+        (double)drive, (double)b->drive_reward, need,
         b->fatigue.stale ? -1.0 : (double)b->fatigue.level,
         (!b->scn.stale && b->scn.quiet_hours) ? "true" : "false",
         b->scn.stale ? -1.0 : (double)b->scn.phase,

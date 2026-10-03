@@ -269,7 +269,11 @@ keep them separate channels.
    + urgency terms); ACh = α global plasticity (0.7 baseline, lowered by
    δ sign-flips per delta-bar-delta, scales lr_eff). 60/60 host checks
    green. Behavioral consumers of γ/β land in step 6.
-5. **Minkowski drive + `r` signal** — parameterize existing drive.
+5. **Minkowski drive + `r` signal** — DONE 2026-10-03.
+   `d = (Σ|dev_i|^m)^(1/n)` with MUSE_DRIVE_M/N (2/2 = Euclidean, so
+   behavior is unchanged); `drive_reward = d_prev − d` captured per
+   tick (the HRRL reward — unclamped, v_fast is this × gain + pulse)
+   and reported in the snapshot. 65/65 host checks green.
 6. **Continuous action vote** under the 26 rules; appraisal frame
    generators (controllability/changeability).
 7. **Precision budget** attention reallocation.
