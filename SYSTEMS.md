@@ -274,8 +274,15 @@ keep them separate channels.
    behavior is unchanged); `drive_reward = d_prev − d` captured per
    tick (the HRRL reward — unclamped, v_fast is this × gain + pulse)
    and reported in the snapshot. 65/65 host checks green.
-6. **Continuous action vote** under the 26 rules; appraisal frame
-   generators (controllability/changeability).
+6. **Continuous action vote** under the 26 rules — DONE 2026-10-03.
+   `muse_brain_appraise()` generates EMA-style frames per drive
+   (desirability/controllability/changeability/urgency — the
+   white-knight test, not hand-authored rules); `muse_brain_vote()`
+   computes score(a) = Σ κ_d·r_d(a), argmax, abstaining when no drive
+   is active; `muse_resolve_verdict()` arbitrates in the turn-gate
+   middleware — rule VETO never softens, the vote can urge caution or
+   soften an advisory CAUTION when eager (boredom-driven), and never
+   vetoes alone. The 26 rules are untouched. 81/81 host checks green.
 7. **Precision budget** attention reallocation.
 8. **Dream pass as parameter rewrite** (needs the above first).
 9. **Social stubs** — `d^cpl`, partner precision (activate with counterparts).

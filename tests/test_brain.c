@@ -372,6 +372,78 @@ int main(void)
           strstr(snap19, "\"reward\"") != NULL,
           "reward: snapshot reports it");
 
+    /* L4 appraisal frames (EMA, generated not hand-authored). */
+    muse_brain_state_t b20;
+    muse_brain_init(&b20, cap_log);
+    b20.fatigue.level = 0.9f; b20.fatigue.stale = false;
+    b20.fatigue.updated_ms = 1000;
+    muse_brain_appraise(&b20);
+    CHECK(fabsf(b20.vote.drives[MUSE_DRIVE_FATIGUE].dev - 0.75f) < 1e-6f,
+          "appraisal: fatigue deviation measured");
+    CHECK(fabsf(b20.vote.drives[MUSE_DRIVE_FATIGUE].urgency - 0.525f) < 1e-6f,
+          "appraisal: urgency = dev x (1 - changeability)");
+    CHECK(b20.vote.drives[MUSE_DRIVE_HUNGER].controllability == 0.0f,
+          "appraisal: hunger not self-reversible (white-knight fails)");
+    CHECK(b20.vote.drives[MUSE_DRIVE_TENSION].changeability == 0.9f,
+          "appraisal: tension self-decays");
+    /* Fresh brain: nothing appraised. */
+    muse_brain_state_t b20b;
+    muse_brain_init(&b20b, cap_log);
+    muse_brain_appraise(&b20b);
+    CHECK(b20b.vote.drives[MUSE_DRIVE_FATIGUE].urgency == 0.0f,
+          "appraisal: stale subsystems appraise nothing");
+
+    /* L4 continuous vote (Smith & Read): κ-weighted, argmax on top. */
+    muse_brain_state_t b21;
+    muse_brain_init(&b21, cap_log);
+    float m21 = -1.0f;
+    CHECK(muse_brain_vote(&b21, &m21) == MUSE_ACT_PROCEED && m21 == 0.0f,
+          "vote: no active drive abstains (rules decide alone)");
+    /* Boredom votes EAGER. */
+    muse_brain_state_t b22;
+    muse_brain_init(&b22, cap_log);
+    b22.boredom = 0.9f;
+    float m22 = 0.0f;
+    CHECK(muse_brain_vote(&b22, &m22) == MUSE_ACT_PROCEED && m22 > 0.3f,
+          "vote: boredom votes eager with a strong margin");
+    /* Tension votes WARY. */
+    muse_brain_state_t b23;
+    muse_brain_init(&b23, cap_log);
+    b23.somatic.stale = false;
+    b23.somatic.updated_ms = 1000;
+    b23.somatic.energy = 0.8f;    /* hunger 0 */
+    b23.somatic.tension = 0.9f;   /* tense 0.7 */
+    float m23 = 0.0f;
+    CHECK(muse_brain_vote(&b23, &m23) == MUSE_ACT_CAUTION && m23 > 0.2f,
+          "vote: tension votes wary");
+    /* Exhaustion votes VETO (advisory — needs rule backing). */
+    muse_brain_state_t b24;
+    muse_brain_init(&b24, cap_log);
+    b24.fatigue.stale = false;
+    b24.fatigue.updated_ms = 1000;
+    b24.fatigue.level = 0.95f;
+    b24.fatigue.recovery_needed = true;
+    CHECK(muse_brain_vote(&b24, NULL) == MUSE_ACT_VETO,
+          "vote: exhaustion votes withdraw");
+
+    /* Resolution: rules are hard constraints, the vote advises. */
+    CHECK(muse_resolve_verdict(MUSE_GATE_CAUTION, MUSE_ACT_PROCEED, 0.5f) ==
+          MUSE_GATE_PROCEED, "resolve: eager softens caution");
+    CHECK(muse_resolve_verdict(MUSE_GATE_CAUTION, MUSE_ACT_PROCEED, 0.1f) ==
+          MUSE_GATE_CAUTION, "resolve: weak eagerness doesn't soften");
+    CHECK(muse_resolve_verdict(MUSE_GATE_VETO, MUSE_ACT_PROCEED, 1.0f) ==
+          MUSE_GATE_VETO, "resolve: a rule veto never softens");
+    CHECK(muse_resolve_verdict(MUSE_GATE_PROCEED, MUSE_ACT_CAUTION, 0.5f) ==
+          MUSE_GATE_CAUTION, "resolve: wariness hardens proceed");
+    CHECK(muse_resolve_verdict(MUSE_GATE_PROCEED, MUSE_ACT_VETO, 0.9f) ==
+          MUSE_GATE_CAUTION, "resolve: the vote never vetoes alone");
+    CHECK(muse_resolve_verdict(MUSE_GATE_PROCEED, MUSE_ACT_PROCEED, 0.0f) ==
+          MUSE_GATE_PROCEED, "resolve: quiet rules, quiet vote");
+    char snap20[1152];
+    CHECK(muse_brain_snapshot(&b22, NULL, snap20, sizeof(snap20)) > 0 &&
+          strstr(snap20, "\"vote\":\"proceed\"") != NULL,
+          "vote: snapshot reports it");
+
     printf(failures ? "\n%d FAILURES\n" : "\nall brain tests passed\n", failures);
     return failures != 0;
 }

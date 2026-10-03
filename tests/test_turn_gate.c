@@ -84,6 +84,32 @@ int main(void)
     CHECK(muse_turn_context(ctx, sizeof(ctx)) == 0,
           "gate: unattached context hook is silent");
 
+    /* 7. L4 vote, end to end: low arousal trips caution_low_arousal,
+     * but a bored (eager) creature softens the advisory CAUTION. */
+    id.growth_stage = 1;   /* toddler again */
+    muse_brain_state_t b2;
+    muse_brain_init(&b2, cap_log);
+    muse_brain_feed_battery(&b2, 4.0f, false, 1000);
+    b2.lc.alertness = 0.3f;          /* -> caution_low_arousal */
+    b2.lc.updated_ms = 2000;
+    b2.lc.stale = false;
+    b2.boredom = 0.9f;              /* -> eager vote */
+    muse_turn_gate_attach(&b2, &id);
+    CHECK(muse_turn_gate_veto() == false,
+          "vote: eager softens advisory caution (press allowed)");
+    CHECK(muse_turn_gate_verdict() == MUSE_GATE_PROCEED,
+          "vote: verdict is proceed");
+    CHECK(strcmp(muse_turn_gate_reason(), "vote_eager") == 0,
+          "vote: reason names the eager vote");
+    /* Same wariness, no boredom: the CAUTION stands. */
+    b2.boredom = 0.0f;
+    CHECK(muse_turn_gate_veto() == false,
+          "vote: calm creature keeps the caution (press allowed)");
+    CHECK(muse_turn_gate_verdict() == MUSE_GATE_CAUTION,
+          "vote: verdict is caution");
+    CHECK(strcmp(muse_turn_gate_reason(), "caution_low_arousal") == 0,
+          "vote: rule reason stands when the vote abstains");
+
     if (failures == 0)
         printf("all turn-gate tests passed\n");
     else

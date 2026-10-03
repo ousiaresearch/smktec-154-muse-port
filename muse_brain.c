@@ -60,6 +60,9 @@ static float raw_drive(const muse_brain_state_t *b)
     return mag > 1.0f ? 1.0f : mag;
 }
 
+/* Forward: the L4 vote refreshes every tick (defined below). */
+muse_action_t muse_brain_vote(muse_brain_state_t *b, float *margin_out);
+
 void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
 {
     /* ALMA layers, three clocks. Fast signals move in seconds... */
@@ -150,6 +153,11 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
         }
         b->prev_boredom = b->boredom;
     }
+
+    /* L4 continuous vote (Smith & Read): appraisal frames + the
+     * κ-weighted vote, refreshed every tick for the snapshot and
+     * the turn-gate middleware. */
+    muse_brain_vote(b, NULL);
 
     /* L3 Doya modulators (corrected mapping): DA = TD error = fast
      * valence — no new state, just its statistics. 5-HT = γ, NA = β
@@ -258,6 +266,111 @@ void muse_brain_feed_valence(muse_brain_state_t *b, float delta,
     b->affect_pulse = p > 1.0f ? 1.0f : (p < -1.0f ? -1.0f : p);
     b->somatic.updated_ms = now_ms;
     b->somatic.stale = false;
+}
+
+void muse_brain_appraise(muse_brain_state_t *b)
+{
+    /* Appraisal frames (EMA lineage, generated not hand-authored).
+     * controllability = white-knight test on the action repertoire:
+     * hunger can't be self-reversed (0.0); fatigue yields to rest
+     * (0.6); tension yields to stillness (0.5); boredom yields to
+     * novelty-seeking (0.7). changeability = self-decay: tension
+     * decays 0.9/tick; the rest don't self-reverse. */
+    float hunger = b->somatic.stale ? 0.0f :
+                   CLAMP01(MUSE_SETPOINT_ENERGY - b->somatic.energy);
+    float tired = b->fatigue.stale ? 0.0f :
+                  CLAMP01(b->fatigue.level - MUSE_SETPOINT_FATIGUE);
+    float tense = b->somatic.stale ? 0.0f :
+                  CLAMP01(b->somatic.tension - MUSE_SETPOINT_TENSION);
+    float bored = CLAMP01(b->boredom);
+    muse_appraisal_t *a = b->vote.drives;
+    a[MUSE_DRIVE_HUNGER]   = (muse_appraisal_t){ hunger, -hunger, 0.0f, 0.0f, hunger };
+    a[MUSE_DRIVE_FATIGUE]  = (muse_appraisal_t){ tired, -tired, 0.6f, 0.3f, tired * 0.7f };
+    a[MUSE_DRIVE_TENSION]  = (muse_appraisal_t){ tense, -tense, 0.5f, 0.9f, tense * 0.1f };
+    a[MUSE_DRIVE_INTEREST] = (muse_appraisal_t){ bored, -bored, 0.7f, 0.2f, bored * 0.8f };
+}
+
+muse_action_t muse_brain_vote(muse_brain_state_t *b, float *margin_out)
+{
+    muse_brain_appraise(b);
+    /* Per-drive action values r_d(a): multiplicative within the drive
+     * (κ_d scales only its own row — Smith & Read), additive across,
+     * argmax on top (Cathexis/Dulberg). Columns: PROCEED/CAUTION/VETO. */
+    float dev[MUSE_NDRIVES];
+    float sum = 0.0f;
+    for (int d = 0; d < MUSE_NDRIVES; d++) {
+        dev[d] = b->vote.drives[d].dev;
+        sum += dev[d];
+    }
+    muse_action_t v = MUSE_ACT_PROCEED;
+    float margin = 0.0f;
+    if (sum > 0.05f) {
+        float score[3] = { 0.0f, 0.0f, 0.0f };
+        for (int d = 0; d < MUSE_NDRIVES; d++) {
+            float k = dev[d] / sum;   /* κ_d: normalized drive gain */
+            float rd[3];
+            switch (d) {
+            case MUSE_DRIVE_HUNGER:
+                rd[0] = -0.4f * dev[d]; rd[1] = 0.2f * dev[d];
+                rd[2] = (dev[d] > 0.75f) ? dev[d] : 0.0f;
+                break;
+            case MUSE_DRIVE_FATIGUE:
+                rd[0] = -0.6f * dev[d]; rd[1] = 0.4f * dev[d];
+                rd[2] = b->fatigue.recovery_needed ? 1.0f : 0.0f;
+                break;
+            case MUSE_DRIVE_TENSION:
+                rd[0] = -0.3f * dev[d]; rd[1] = 0.6f * dev[d]; rd[2] = 0.0f;
+                break;
+            default: /* INTEREST: boredom votes EAGER, against withdrawal */
+                rd[0] = 1.0f * dev[d]; rd[1] = -0.3f * dev[d]; rd[2] = -0.8f * dev[d];
+                break;
+            }
+            for (int a2 = 0; a2 < 3; a2++)
+                score[a2] += k * rd[a2];
+        }
+        int best = 0;
+        for (int a2 = 1; a2 < 3; a2++)
+            if (score[a2] > score[best]) best = a2;
+        int second = (best == 0) ? 1 : 0;
+        for (int a2 = 0; a2 < 3; a2++)
+            if (a2 != best && score[a2] > score[second]) second = a2;
+        v = (muse_action_t)best;
+        margin = score[best] - score[second];
+    }
+    b->vote.vote = v;
+    b->vote.vote_margin = margin;
+    if (margin_out) *margin_out = margin;
+    return v;
+}
+
+muse_gate_verdict_t muse_resolve_verdict(muse_gate_verdict_t rules_v,
+                                         muse_action_t vote, float margin)
+{
+    /* The 26 rules are hard constraints: a rule VETO never softens.
+     * The vote advises — it can urge caution, or soften an advisory
+     * CAUTION when the creature is eager (boredom-driven). The vote
+     * never vetoes alone: hard vetoes need rule backing. */
+    if (rules_v == MUSE_GATE_VETO)
+        return MUSE_GATE_VETO;
+    muse_gate_verdict_t vv = (vote == MUSE_ACT_PROCEED) ? MUSE_GATE_PROCEED :
+                             MUSE_GATE_CAUTION;   /* CAUTION or VETO */
+    if (rules_v == MUSE_GATE_CAUTION) {
+        if (vv == MUSE_GATE_PROCEED && margin > 0.3f)
+            return MUSE_GATE_PROCEED;   /* eager overrules wariness */
+        return MUSE_GATE_CAUTION;
+    }
+    if (vv == MUSE_GATE_CAUTION && margin > 0.2f)
+        return MUSE_GATE_CAUTION;       /* wary: unease without a rule */
+    return MUSE_GATE_PROCEED;
+}
+
+static const char *action_name(muse_action_t a)
+{
+    switch (a) {
+    case MUSE_ACT_CAUTION: return "caution";
+    case MUSE_ACT_VETO:    return "veto";
+    default:               return "proceed";
+    }
 }
 
 const char *muse_emotion_name(muse_emotion_t e)
@@ -523,7 +636,7 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
     int n = snprintf(out, out_n,
         "{\"self\":\"%.31s\",\"gen\":%lu,\"stage\":%lu,"
         "\"energy\":%.2f,\"tension\":%.2f,\"arousal\":%.2f,\"valence\":%.2f,"
-        "\"emotion\":\"%s\",\"boredom\":%.2f,"
+        "\"emotion\":\"%s\",\"boredom\":%.2f,\"vote\":\"%s\","
         "\"gamma\":%.2f,\"alpha\":%.2f,"
         "\"mood\":%.2f,\"drive\":%.2f,\"reward\":%.2f,\"need\":\"%s\","
         "\"fatigue\":%.2f,\"quiet\":%s,\"phase\":%.2f,"
@@ -538,6 +651,7 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
         b->somatic.stale ? -9.0 : (double)b->somatic.valence,
         muse_emotion_name(b->emotion),
         (double)b->boredom,
+        action_name(b->vote.vote),
         (double)b->ht_gamma,
         (double)b->ach_alpha,
         b->somatic.stale ? -9.0 : (double)b->somatic.mood,

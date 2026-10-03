@@ -138,6 +138,43 @@ typedef struct {
     uint32_t updated_ms;
 } muse_decisions_t;
 
+/* L4 appraisal + continuous vote (Smith & Read; Cathexis; EMA;
+ * SYSTEMS.md). Drives stay modular; they combine late, at the action:
+ * score(a) = Σ_d κ_d · r_d(a) — multiplicative within a drive
+ * (κ scales only its own row), additive across, argmax on top.
+ * The 26 rules remain the hard constraint layer above the vote. */
+#define MUSE_NDRIVES 4
+
+typedef enum {
+    MUSE_DRIVE_HUNGER = 0,
+    MUSE_DRIVE_FATIGUE = 1,
+    MUSE_DRIVE_TENSION = 2,
+    MUSE_DRIVE_INTEREST = 3   /* boredom as a drive (Cathexis) */
+} muse_drive_id_t;
+
+/* Appraisal frame (Gratch & Marsella, generated not hand-authored):
+ * per-drive derivation of desirability / controllability /
+ * changeability from the drive↔action causal links. */
+typedef struct {
+    float dev;             /* 0..1 deviation from setpoint */
+    float desirability;    /* −1..1 signed value of the current state */
+    float controllability; /* 0..1 can an action reverse it? (white-knight) */
+    float changeability;   /* 0..1 will it self-decay? */
+    float urgency;         /* dev × (1 − changeability) */
+} muse_appraisal_t;
+
+typedef enum {
+    MUSE_ACT_PROCEED = 0,
+    MUSE_ACT_CAUTION = 1,
+    MUSE_ACT_VETO = 2
+} muse_action_t;
+
+typedef struct {
+    muse_appraisal_t drives[MUSE_NDRIVES];
+    muse_action_t vote;
+    float vote_margin;
+} muse_vote_t;
+
 /* Diary sink: the board file wires this to SD append. Lines are short. */
 typedef void (*muse_brain_log_fn)(const char *line);
 
@@ -193,6 +230,7 @@ typedef struct {
     float da_var;         /* EMA of Var(δ): world uncertainty */
     float da_flips;       /* EMA of δ sign-flip rate */
     float da_prev;        /* previous δ (flip detection) */
+    muse_vote_t vote;     /* L4: appraisal frames + continuous vote */
     /* Curiosity predictor (research intake: Pathak et al. 2017, firmware
      * scale): EMA predictors per channel; surprise = |prediction-error|. */
     float pred_energy;
@@ -242,6 +280,19 @@ void muse_brain_set_quiet_hours(muse_brain_state_t *b, bool quiet,
 void muse_brain_feed_valence(muse_brain_state_t *b, float delta,
                              uint32_t now_ms);
 
+
+/* Fill the appraisal frames from current state (pure derivation). */
+void muse_brain_appraise(muse_brain_state_t *b);
+/* The continuous vote: κ-weighted per-drive action values, argmax.
+ * Runs appraise() first. Abstains (PROCEED, margin 0) when no drive
+ * is active — then the rules decide alone. */
+muse_action_t muse_brain_vote(muse_brain_state_t *b, float *margin_out);
+/* Arbitration: the 26 rules are hard constraints (a rule VETO never
+ * softens); the vote advises — it can urge caution, or soften an
+ * advisory CAUTION when the creature is eager. The vote never vetoes
+ * alone: hard vetoes need rule backing. */
+muse_gate_verdict_t muse_resolve_verdict(muse_gate_verdict_t rules_v,
+                                         muse_action_t vote, float margin);
 /* Learning-rate law (Joffily & Coricelli eq. 4, Doya-scaled,
  * SYSTEMS.md steps 2+4): lr_eff = base · (α/α_base) · exp(−k·v + ω),
  * clamped so the exponential stays in [0.2×, 4×].

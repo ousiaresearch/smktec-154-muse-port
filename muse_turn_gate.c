@@ -70,6 +70,19 @@ bool muse_turn_gate_veto(void)
     muse_brain_gate_inputs(s_brain, 0.5f, gut, &in);
     muse_gate_result_t r = muse_gate_evaluate(&in);
 
+    /* L4 continuous vote (Smith & Read): the subsymbolic layer beneath
+     * the 26 rules. The rules are hard constraints — a rule VETO never
+     * softens. The vote advises: it can urge caution, or soften an
+     * advisory CAUTION when the creature is eager (boredom-driven). */
+    float margin = 0.0f;
+    muse_action_t vote = muse_brain_vote(s_brain, &margin);
+    muse_gate_verdict_t resolved = muse_resolve_verdict(r.verdict, vote, margin);
+    if (resolved != r.verdict) {
+        r.verdict = resolved;
+        r.reason = (resolved == MUSE_GATE_PROCEED) ? "vote_eager" : "vote_wary";
+        ESP_LOGI(TAG, "vote %s (margin %.2f)", r.reason, (double)margin);
+    }
+
     /* The newborn cannot say no — VETO degrades to CAUTION. */
     if (r.verdict == MUSE_GATE_VETO && s_id->growth_stage == 0) {
         ESP_LOGI(TAG, "newborn veto degraded: %s", r.reason);
