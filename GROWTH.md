@@ -75,29 +75,33 @@ not grand arcs, daily micro-authorship. Growth has no top; after
 Adolescent the stages become depth, and the outfit ritual is the first
 depth mechanic.
 
-The ritual:
+The ritual (revised 2026-10-03, Anduril's correction): not a generated
+picture *of* the outfit — the outfit *is* the avatar. Andrew didn't
+paint the clothes; he put them on. Each morning Lapis's live avatar
+changes into the day's outfit; at night it changes into pajamas.
 - At morning wake, before the first interaction, the cloud chooses the
-  day's outfit.
+  day's outfit and applies it to the live avatar via the avatar tools.
 - Inputs: Anduril's local weather (the creature dresses for *his* sky —
   empathy by proxy; it has no skin, but it dresses as if it feels his
   rain), the biomimetic state (arousal/valence/mood), yesterday's diary
   (what happened), and the chooser's own taste — a color it just likes
   today. Not a deterministic function: weather-in-outfit-out would be a
   uniform. Taste as agency.
-- The outfit renders as a layer over the avatar modes and shows on the
-  face. (Build rule: every feature shows on the face.)
+- The avatar is the face, so the outfit shows everywhere Lapis appears.
+  Build rule satisfied in the strongest form: the feature *is* the face.
 - The choice is logged to the diary: what was chosen and why — weather,
   mood, whim. The log is the style record; rereading it is how a style
   becomes visible to its wearer.
 - Identity anchors stay: the sword baldric is always worn, over
-  everything. Some things are not outfit.
+  everything. Some things are not outfit. (Pajamas excepted — the sword
+  rests at night.)
 
-Firmware notes (v1): outfit as data in the identity/snapshot
-(`outfit_id` + description + reason); renderer composites the outfit
-layer; cloud picks daily and pushes with the morning snapshot.
-Deterministic fallback: if the cloud is unreachable, the device keeps
-yesterday's outfit rather than going bare — a child doesn't forget to
-dress because the sky was quiet.
+Firmware notes (v1): two silent scheduled jobs — morning outfit
+(~7:30am ET) and nighttime pajamas (~9:30pm ET). The morning run checks
+Anduril's local weather, chooses with taste, and applies via avatar.edit
+(auto-activates on scheduled turns). If a run fails, the avatar keeps
+yesterday's outfit — a child doesn't forget to dress because the sky was
+quiet.
 
 ## What growth is NOT
 
