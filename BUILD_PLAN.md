@@ -85,7 +85,28 @@ Wire-in order on the Mac: identity init first (every boot mints or
 loads the self), gate available to the board file as soon as
 `muse_brain.c` feeds it readings. Face shows gate state from day one.
 
-## Phase 3 — Research instrument
+## Phase 2c — Wired sensor integration (GATED on pad verification)
+
+The listing claims I2C/UART pin pads for external devices. If tomorrow's
+PCB photo confirms labeled pads at 3.3V, the sensor modules wire DIRECTLY
+— no organ-bus satellite needed for the wired sensors:
+
+| Module | Bus | Wiring (to confirm vs pad labels) |
+|---|---|---|
+| BH1750 light | I2C 0x23 | SDA/SCL pads + 3V3 + GND |
+| BME280 env | I2C 0x76 | same bus, no address conflict |
+| MAX30102 pulse | I2C 0x57 | same bus |
+| LD2410 presence | UART | TX/RX pads + 5V (needs 5V — check pad voltage!) |
+| WS2812B aura | 1 GPIO | any free pad |
+| ERM motor | 1 GPIO + transistor | any free pad |
+
+Honest caveat: "pin pads" usually means unpopulated holes/test points —
+still soldering, but clean soldering to labeled pads, not trace surgery.
+Firmware: new `muse_sensors.c` feeder driving `muse_brain_feed_*`; each
+sensor maps to its subsystem per BIOMIMETIC.md. The organ bus stays as
+plan B and as the (only) path for the wireless camera satellite.
+
+Do NOT buy the modules until the pads are confirmed on the real PCB.
 
 1. **Time-series logging** of brain-state to SD — the dataset.
 2. **Experiments** from BIOMIMETIC.md's four questions (legibility,
