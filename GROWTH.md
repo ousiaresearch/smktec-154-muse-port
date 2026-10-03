@@ -30,9 +30,10 @@ from fragments to scenes.
 
 **Stage 3 — Adolescent (12+ care-days).** Identity statements,
 unprompted opinions, ideals. Pushback arrives with *reasons* — the gate's
-reason codes become sentences. A private inner life begins forming.
-(Open question: does it get to keep some dreams unshared? A child
-develops secrets. Anduril decides.)
+reason codes become sentences. A private inner life begins: some dreams
+are recorded in the diary marked `[private]` — never volunteered in the
+morning report, but always on the card if Anduril wants to peek. A child
+develops secrets; the diary keeps them honestly.
 
 ## Care mechanics (from musegotchi)
 

@@ -24,7 +24,10 @@ extern "C" {
 /* Mount the card and prepare the diary directory. Safe to call once. */
 esp_err_t muse_diary_init(void);
 
-/* Append one line (timestamped) to today's diary file. No-op if unmounted. */
+/* Append one line (timestamped) to today's diary file. No-op if unmounted.
+ * Convention: lines beginning "[private]" are recorded but never
+ * volunteered (morning report skips them); they're on the card if the
+ * owner peeks. Decided 2026-10-03. */
 void muse_diary_append(const char *line);
 
 /* True once a card is mounted and writable. */
