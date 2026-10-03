@@ -152,6 +152,20 @@ typedef struct {
     bool drive_seeded;    /* false until the first fresh tick seeds it */
     float affect_pulse;   /* -1..1 transient event input to valence */
     muse_emotion_t emotion;
+    /* L6 boredom (Yu et al. HHVG, SYSTEMS.md): boredom = familiarity ×
+     * (1 − info_gain). familiarity[] is the meta-model Q — one float
+     * per context class (quiet × motion × recent-interaction = 16).
+     * info_gain tracks recent prediction-error (vta). High boredom
+     * lowers na_temp toward exploration (anti-darkroom). */
+    float familiarity[16];
+    float info_gain;      /* 0..1 recent prediction-error level */
+    float boredom;        /* 0..1 */
+    float na_temp;        /* Doya noradrenaline: inverse temperature β.
+                           * 1 = exploit (sharp), 0 = explore (wide).
+                           * Step 4 owns the interaction graph; the
+                           * boredom coupling is set here. */
+    float peak_boredom;
+    float prev_boredom;
     /* Curiosity predictor (research intake: Pathak et al. 2017, firmware
      * scale): EMA predictors per channel; surprise = |prediction-error|. */
     float pred_energy;

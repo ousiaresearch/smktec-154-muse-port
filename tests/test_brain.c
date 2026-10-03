@@ -272,6 +272,35 @@ int main(void)
     CHECK(b14a.learn_fast[0] > b14b.learn_fast[0] + 0.1f,
           "lr: bad feeling revises the model faster");
 
+    /* L6 boredom (Yu et al. HHVG, SYSTEMS.md step 3):
+     * boredom = familiarity × (1 − info_gain). */
+    muse_brain_state_t b15a, b15b;
+    muse_brain_init(&b15a, cap_log);
+    muse_brain_init(&b15b, cap_log);
+    muse_brain_feed_battery(&b15a, 4.0f, false, 1000);
+    muse_brain_feed_battery(&b15b, 4.0f, false, 1000);
+    for (int i = 0; i < 600; i++) {
+        /* b gets surprise every 5 ticks; a sits in the same quiet room. */
+        if (i % 5 == 0)
+            muse_brain_note_novelty(&b15b, (uint32_t)(1000 + i * 2000));
+        muse_brain_tick(&b15a, (uint32_t)(2000 + i * 2000), false);
+        muse_brain_tick(&b15b, (uint32_t)(2000 + i * 2000), false);
+    }
+    CHECK(b15a.boredom > 0.5f,
+          "boredom: uneventful exposure breeds boredom");
+    CHECK(b15b.boredom < b15a.boredom - 0.05f,
+          "boredom: information gain suppresses it");
+    CHECK(b15a.na_temp < 0.4f,
+          "boredom: high boredom lowers exploration temp (Doya beta)");
+    CHECK(b15a.dmn.wanders >= 1,
+          "boredom: crossing into boredom is a wandering episode");
+    CHECK(b15a.info_gain < 0.05f,
+          "boredom: quiet room teaches nothing");
+    char snap15[1152];
+    CHECK(muse_brain_snapshot(&b15a, NULL, snap15, sizeof(snap15)) > 0 &&
+          strstr(snap15, "\"boredom\"") != NULL,
+          "boredom: snapshot reports it");
+
     printf(failures ? "\n%d FAILURES\n" : "\nall brain tests passed\n", failures);
     return failures != 0;
 }

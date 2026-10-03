@@ -19,6 +19,7 @@ void muse_brain_init(muse_brain_state_t *b, muse_brain_log_fn log)
     b->somatic.energy = 0.5f;
     b->somatic.arousal = 0.5f;
     b->lc.alertness = 0.5f;
+    b->na_temp = 0.5f;            /* Doya β starts balanced */
     b->pred_energy = 0.5f;
     b->pred_tension = 0.0f;
     for (int d = 0; d < MUSE_LEARN_DOMAINS; d++) {
@@ -105,6 +106,34 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
         b->affect_pulse *= MUSE_DECAY_MEDIUM;
         b->emotion = MUSE_EMO_CALM;
         b->drive_seeded = false;
+    }
+    /* L6 boredom (Yu et al. HHVG): the anti-darkroom drive.
+     * Boredom is not low stimulation — it is devaluation of the known:
+     * familiarity with the current situation × (1 − recent information
+     * gain). High boredom lowers the exploration temperature (Doya β)
+     * so the creature seeks novelty instead of looping. */
+    {
+        int q = (!b->scn.stale && b->scn.quiet_hours) ? 1 : 0;
+        int m = b->somatic.tension > 0.6f ? 2 :
+                (b->somatic.tension > 0.25f ? 1 : 0);
+        int r = (b->last_interaction_ms != 0 &&
+                 now_ms - b->last_interaction_ms < 300000) ? 1 : 0;
+        int ctx = (q << 3) | (m << 1) | r;
+        b->familiarity[ctx] += (1.0f - b->familiarity[ctx]) * 0.002f;
+        b->info_gain += (b->vta - b->info_gain) * (1.0f - MUSE_DECAY_MEDIUM);
+        b->boredom = b->familiarity[ctx] * (1.0f - CLAMP01(b->info_gain));
+        if (b->boredom > b->peak_boredom)
+            b->peak_boredom = b->boredom;
+        /* Boredom pulls β toward exploration; β relaxes back to 0.5. */
+        float target = 0.5f - 0.5f * b->boredom;
+        b->na_temp += (target - b->na_temp) * (1.0f - MUSE_DECAY_MEDIUM);
+        /* Restlessness: crossing into boredom is a wandering episode. */
+        if (b->prev_boredom <= 0.6f && b->boredom > 0.6f) {
+            b->dmn.wanders++;
+            b->dmn.updated_ms = now_ms;
+            b->dmn.stale = false;
+        }
+        b->prev_boredom = b->boredom;
     }
     /* Mood ω (Hesp level-2 / Joffily eq. 4): slow EMA of derived
      * valence — signed model-fitness. This is what persists across
@@ -325,6 +354,8 @@ void muse_brain_gate_inputs(const muse_brain_state_t *b, float adj_confidence,
     out->tension = b->somatic.stale ? 0.0f : b->somatic.tension;
     out->novelty = b->novelty;
     out->vta = b->vta;
+    out->boredom = b->boredom;
+    out->explore_temp = b->na_temp;
     out->adj_confidence = CLAMP01(adj_confidence);
     out->recovery_needed = !b->fatigue.stale && b->fatigue.recovery_needed;
     out->distracted = b->distracted;
@@ -392,11 +423,12 @@ void muse_brain_consolidate(muse_brain_state_t *b, muse_identity_t *id)
         char line[256];
         snprintf(line, sizeof(line),
                  "dream: %lu interactions, %lu vetoes, %lu cautions, "
-                 "peak fatigue %.2f, %lu novel encounters%s%s",
+                 "peak fatigue %.2f, peak boredom %.2f, %lu novel encounters%s%s",
                  (unsigned long)b->interactions,
                  (unsigned long)b->veto_count,
                  (unsigned long)b->caution_count,
                  (double)b->peak_fatigue,
+                 (double)b->peak_boredom,
                  (unsigned long)b->novel_count,
                  b->veto_count ? ", last veto: " : "",
                  b->veto_count ? b->last_veto_reason : "");
@@ -411,6 +443,7 @@ void muse_brain_consolidate(muse_brain_state_t *b, muse_identity_t *id)
     b->veto_count = 0;
     b->caution_count = 0;
     b->peak_fatigue = 0;
+    b->peak_boredom = 0;
     b->novel_count = 0;
     b->last_veto_reason[0] = '\0';
 }
@@ -440,7 +473,7 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
     int n = snprintf(out, out_n,
         "{\"self\":\"%.31s\",\"gen\":%lu,\"stage\":%lu,"
         "\"energy\":%.2f,\"tension\":%.2f,\"arousal\":%.2f,\"valence\":%.2f,"
-        "\"emotion\":\"%s\","
+        "\"emotion\":\"%s\",\"boredom\":%.2f,"
         "\"mood\":%.2f,\"drive\":%.2f,\"need\":\"%s\","
         "\"fatigue\":%.2f,\"quiet\":%s,\"phase\":%.2f,"
         "\"gate\":\"%s\",\"gate_why\":\"%s\","
@@ -453,6 +486,7 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
         b->lc.stale ? -1.0 : (double)b->lc.alertness,
         b->somatic.stale ? -9.0 : (double)b->somatic.valence,
         muse_emotion_name(b->emotion),
+        (double)b->boredom,
         b->somatic.stale ? -9.0 : (double)b->somatic.mood,
         (double)drive, need,
         b->fatigue.stale ? -1.0 : (double)b->fatigue.level,

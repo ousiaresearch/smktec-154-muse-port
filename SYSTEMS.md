@@ -257,7 +257,12 @@ keep them separate channels.
    [0.2×, 4×]. Applied to all four learning EMAs (two curiosity
    predictors, fast/slow learning progress). Precision-share and the
    TAME window multiply in at steps 7–8. 43/43 host checks green.
-3. **Boredom drive** — familiarity/info-gain EMAs; wire to NA temperature.
+3. **Boredom drive** — DONE 2026-10-03. `boredom = familiarity[ctx] ×
+   (1 − info_gain)` over 16 context classes (quiet × motion ×
+   interaction); high boredom lowers Doya β (`na_temp`) toward
+   exploration, increments the DMN wandering counter on 0.6-crossing,
+   and is reported in gate inputs + snapshot + the dream line.
+   49/49 host checks green.
 4. **Doya modulators** — four scalars + interaction rules (correct mapping).
 5. **Minkowski drive + `r` signal** — parameterize existing drive.
 6. **Continuous action vote** under the 26 rules; appraisal frame
