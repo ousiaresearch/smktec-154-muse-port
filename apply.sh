@@ -29,10 +29,11 @@ cp "$HERE/board_smktec_s3_touch_lcd_154.c" "$SDK/components/muse/boards/"
 echo "== copying IMU engine =="
 cp "$HERE/muse_imu.c" "$HERE/muse_imu.h" "$SDK/components/muse/"
 
-echo "== copying gate + identity + brain =="
+echo "== copying gate + identity + brain + diary =="
 cp "$HERE/muse_gate.c" "$HERE/muse_gate.h" "$SDK/components/muse/"
 cp "$HERE/muse_identity.c" "$HERE/muse_identity.h" "$SDK/components/muse/"
 cp "$HERE/muse_brain.c" "$HERE/muse_brain.h" "$SDK/components/muse/"
+cp "$HERE/muse_diary.c" "$HERE/muse_diary.h" "$SDK/components/muse/"
 
 echo "== copying avatar renderer =="
 mkdir -p "$SDK/components/muse/avatar"
@@ -80,31 +81,32 @@ s = s.replace(
   '''    elseif(CONFIG_MUSE_BOARD_AIPI)
         list(APPEND srcs "boards/board_aipi.c")
     elseif(CONFIG_MUSE_BOARD_SMKTEC_S3_TOUCH_LCD_154)
-        list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c" "muse_imu.c" "muse_gate.c" "muse_identity.c" "muse_brain.c")''')
+        list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c" "muse_imu.c" "muse_gate.c" "muse_identity.c" "muse_brain.c" "muse_diary.c")''')
 open(p, 'w').write(s)
 print("CMakeLists updated")
 EOF
 else
   echo "CMakeLists already patched (board branch)"
 fi
-if ! grep -q '"muse_brain.c"' "$CMK"; then
+if ! grep -q '"muse_diary.c"' "$CMK"; then
   python3 - "$CMK" <<'EOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
+new = 'list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c" "muse_imu.c" "muse_gate.c" "muse_identity.c" "muse_brain.c" "muse_diary.c")'
 forms = [
   'list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c")',
   'list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c" "muse_imu.c")',
   'list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c" "muse_imu.c" "muse_gate.c" "muse_identity.c")',
+  'list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c" "muse_imu.c" "muse_gate.c" "muse_identity.c" "muse_brain.c")',
 ]
-new = 'list(APPEND srcs "boards/board_smktec_s3_touch_lcd_154.c" "muse_imu.c" "muse_gate.c" "muse_identity.c" "muse_brain.c")'
 for f in forms:
     s = s.replace(f, new)
 open(p, 'w').write(s)
-print("CMakeLists updated (muse_brain.c)")
+print("CMakeLists updated (muse_diary.c)")
 EOF
 else
-  echo "CMakeLists already patched (muse_brain.c)"
+  echo "CMakeLists already patched (muse_diary.c)"
 fi
 
 echo "== idf_component.yml =="

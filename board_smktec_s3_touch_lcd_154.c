@@ -41,12 +41,17 @@
 #include "esp_log.h"
 #include "esp_lv_adapter.h"
 #include "esp_sleep.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #include "muse_audio.h"
 #include "muse_board.h"
+#include "muse_brain.h"
+#include "muse_diary.h"
+#include "muse_identity.h"
 #include "muse_mem.h"
+#include "muse_state.h"
 
 static const char *TAG = "board";
 
@@ -94,6 +99,11 @@ static esp_lcd_panel_handle_t s_panel;
 static muse_gpio_button_t s_talk, s_aux;
 static adc_oneshot_unit_handle_t s_adc;
 
+/* The creature's self and nervous system (see INTEGRATION.md §10). */
+static muse_identity_t s_identity;
+static muse_brain_state_t s_brain;
+static bool s_brain_ready = false;
+
 static esp_err_t init(void)
 {
     /* Enable the battery path (xiaozhi PowerON()). */
@@ -125,7 +135,17 @@ static esp_err_t init(void)
     ESP_RETURN_ON_ERROR(adc_oneshot_new_unit(&adc_cfg, &s_adc), TAG, "adc");
     const adc_oneshot_chan_cfg_t ch_cfg = { .atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_12 };
     /* TODO: calibrate the divider levels on hardware (see read_power). */
-    return adc_oneshot_config_channel(s_adc, BATT_ADC_CH, &ch_cfg);
+    esp_err_t adc_err = adc_oneshot_config_channel(s_adc, BATT_ADC_CH, &ch_cfg);
+
+    /* The creature wakes up as someone: identity first (NVS mint or load),
+     * then the diary (best-effort SD mount), then the brain with the diary
+     * as its log sink. None of this fails the boot. */
+    if (muse_identity_init(&s_identity) != 0)
+        ESP_LOGW(TAG, "identity unavailable — the self is unknown this boot");
+    muse_diary_init();
+    muse_brain_init(&s_brain, muse_diary_append);
+    s_brain_ready = true;
+    return adc_err;
 }
 
 static lv_display_t *display_start(lv_indev_t **touch)
@@ -397,6 +417,22 @@ static void wait_buttons(int timeout_ms)
     muse_gpio_buttons_wait((muse_gpio_button_t *const[]){ &s_talk, &s_aux }, 2, timeout_ms);
 }
 
+/* Personalization wiring (INTEGRATION.md §10). Non-static: the SLEEPY mode
+ * (§9) and the future gate middleware call these. */
+
+/* Brain accessor for the gate middleware (voice turn loop, SDK core). */
+muse_brain_state_t *smktec_brain(void)
+{
+    return s_brain_ready ? &s_brain : NULL;
+}
+
+/* Called on SLEEPY entry: the muse dreams (diary via the log sink). */
+void smktec_note_sleepy(bool entering)
+{
+    if (entering && s_brain_ready)
+        muse_brain_consolidate(&s_brain);
+}
+
 /* Battery voltage on GPIO1 through the board's divider; levels are
  * PLACEHOLDERS — calibrate against a multimeter on hardware. */
 static esp_err_t read_power(muse_power_t *out)
@@ -409,6 +445,17 @@ static esp_err_t read_power(muse_power_t *out)
     out->battery_pct = charging ? 100 : 50;   /* TODO: map raw to pct */
     out->battery_mv = 0;                       /* TODO: uncalibrated */
     (void)raw;
+
+    /* Brain tick — muse_input polls read_power every 2s awake / 10s paused.
+     * Battery only feeds the brain once the divider is calibrated; until
+     * then the brain honestly reports stale energy (neutral defaults). */
+    if (s_brain_ready) {
+        uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+        if (out->battery_mv > 0)
+            muse_brain_feed_battery(&s_brain, out->battery_mv / 1000.0f,
+                                    charging, now_ms);
+        muse_brain_tick(&s_brain, now_ms, muse_state_asleep());
+    }
     return ESP_OK;
 }
 

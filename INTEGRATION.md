@@ -107,3 +107,28 @@ tap → `muse_state_make_happy()`, tilt → `muse_pixel_set_facing()`.
 `SLEEPY`/`DIZZY` need the `muse_mode_t` enum extended in
 `components/muse/muse_state.h` (insert before `MUSE_MODE_COUNT`), and the
 `muse_pixel_set_facing()` prototype added to `muse_pixel.h`.
+
+## 10. Personalization wiring (identity, brain, diary)
+
+`apply.sh` copies `muse_identity.c/h`, `muse_brain.c/h`, `muse_gate.c/h`,
+`muse_diary.c/h` into `components/muse/` and adds them to the board's
+`srcs`. The board file wires them:
+
+- **`init()`**: `muse_identity_init()` (NVS mint/load — never fails boot),
+  then `muse_diary_init()` (best-effort SD mount), then
+  `muse_brain_init(&s_brain, muse_diary_append)` — the diary is the
+  brain's log sink. `s_brain_ready` gates everything downstream.
+- **`read_power()`** (polled every 2s awake / 10s paused by `muse_input`):
+  runs `muse_brain_tick()` with `muse_state_asleep()`. Battery feeds the
+  brain only once `battery_mv` is calibrated — until then the brain
+  honestly reports stale energy (neutral defaults at the gate).
+- **`smktec_note_sleepy(bool entering)`**: call on SLEEPY entry (§9) —
+  runs `muse_brain_consolidate()`, the dream pass. Non-static, declared
+  implicitly; add a prototype where the SLEEPY implementation lives.
+- **`smktec_brain()`**: returns the brain state (or NULL) for the future
+  gate middleware in the voice turn loop (SDK core, upstream-PR
+  territory).
+
+VERIFY on the Mac build: NVS, FatFS/SDMMC mount (slot pins!), and that
+`muse_state_asleep()` is linkable from the board file (same component —
+should be).
