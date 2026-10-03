@@ -84,3 +84,23 @@ draft, you'll re-run `./port/apply.sh`, rebuild.
 Pair it in the Muse app (it advertises as `MuseGadget-XXXXXX`, breathing
 orange = waiting for setup). Then the fun checklist: display, touch,
 buttons, speaker, mics, IMU gestures (shake me), BLE/Wi-Fi, OTA.
+
+## Appendix: the Arduino IDE path (for experiments, not the Muse build)
+
+The board also runs under the Arduino IDE (esp32 core 3.x, board target
+"ESP32S3 Dev Module"). The Muse firmware itself **requires ESP-IDF** —
+Arduino can't build the SDK — but Arduino is the right tool for two jobs:
+
+1. **Hardware sanity checks.** If the SDK build misbehaves, a 20-line
+   sketch (I2C scan, `tft.fillScreen`, touch readout) tells you in a
+   minute whether it's hardware or firmware. Faster than debugging blind.
+2. **The future organ controller.** The USB organ-bus satellite is a plain
+   CDC serial device — an Arduino-programmed ESP32 devkit is the friendliest
+   way to build it. Arduino IDE, `Serial` at 115200, newline-delimited
+   JSON per the organ protocol (PERSONALIZATION.md §1).
+
+Arduino settings that matter: USB CDC On Boot = Enabled (for `Serial`),
+USB Mode = "Hardware CDC and JTAG". Flash via the BOOT button if the
+port disappears. Whatever you flash, the Muse firmware is one
+`idf.py flash` away — and you already backed up the factory image in
+step 5.
