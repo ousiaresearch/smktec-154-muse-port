@@ -18,7 +18,7 @@
  * SMKTelec ESP32-S3 1.54" Touch LCD (clone of Waveshare ESP32-S3-Touch-LCD-1.54):
  * ESP32-S3R8 (8 MB octal PSRAM), 16 MB flash, 1.54" 240x240 ST7789 LCD with
  * CST816S capacitive touch, ES7210 dual-mic array + ES8311 codec + speaker,
- * 3 buttons (PWR, VOL_UP, BOOT), battery circuit, microSD.
+ * 3 buttons (PWR, PLUS, BOOT), battery circuit, microSD.
  *
  * DRAFT — written before hardware arrival. Pins follow xiaozhi-esp32's board
  * definition for waveshare/esp32-s3-touch-lcd-1.54 (config.h) and the
@@ -80,6 +80,9 @@ static const char *TAG = "board";
 /* Buttons. */
 #define TALK_GPIO GPIO_NUM_5   /* PWR button */
 #define AUX_GPIO GPIO_NUM_0    /* BOOT button */
+#define PLUS_GPIO GPIO_NUM_4   /* PLUS custom button — TODO: assign (volume? pet?);
+                                * muse_board_t only exposes talk+aux, so this
+                                * needs a wiring decision on bring-up day. */
 
 /* Battery circuit. */
 #define BATT_EN GPIO_NUM_2     /* drive high to enable battery path */

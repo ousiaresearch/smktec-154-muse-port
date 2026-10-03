@@ -52,7 +52,7 @@ Needs `espressif/esp_lcd_touch_cst816s` added as a managed component
 | I2S WS | 10 | |
 | I2S DIN (mic → S3) | 11 | |
 | I2S DOUT (S3 → speaker) | 12 | |
-| PA enable (amp) | 7 | Drive high to enable speaker amp |
+| PA enable (amp) | 7 | NS4150B; drive high to enable speaker amp |
 | Codec I2C | SDA 42 / SCL 41 | Shared with touch |
 
 Same audio chips as the supported Waveshare 1.75C board — the audio path
@@ -63,8 +63,8 @@ is proven in the SDK, just wired to different pins here.
 | Button | GPIO | Notes |
 |---|---|---|
 | PWR | 5 | → push-to-talk |
-| VOL_UP | 4 | → aux/menu |
-| VOL_DOWN / BOOT | 0 | BOOT on S3 |
+| PLUS | 4 | Custom button; unassigned in v1 (see TODO in board file) |
+| BOOT | 0 | → aux/setup; BOOT on S3 |
 
 ## Power / battery
 
@@ -73,6 +73,9 @@ is proven in the SDK, just wired to different pins here.
 | Battery enable | 2 | Drive high in `init()` (xiaozhi `PowerON()`) |
 | Battery ADC | 1 | Voltage divider; needs calibration on hardware |
 | Charging indicator | 3 | High while charging |
+
+Connectors: speaker and battery use **MX1.25 2-pin** headers (not JST-PH).
+Onboard PCB antenna — no external antenna needed. TF slot confirmed on board.
 
 ## Extras (not needed for the port)
 
