@@ -10,6 +10,14 @@ each tied to a subsystem or a transhumanist value, ranked by feasibility.
 Nothing here changes Phase 1–2 of BUILD_PLAN.md; it shapes what we build
 *around* them so personalization isn't bolted on later.
 
+## Scope — v1 is the bare board (Anduril, 2026-10-03)
+
+Personalization v1 targets **only** the SMKTelec board arriving 2026-10-03:
+S3R8, touch display, dual mics, speaker, IMU, 3 buttons, microSD, battery
+circuit, BLE/WiFi. No external sensors, no organ bus, no satellites.
+Sections below are tagged **v1** (bare board) or **deferred** (needs
+organs). Deferred items stay as the roadmap, not the plan.
+
 ## Verified platform facts (researched 2026-10-03)
 
 - **USB host works on the S3.** The ESP32-S3's USB-OTG peripheral supports
@@ -33,7 +41,9 @@ Nothing here changes Phase 1–2 of BUILD_PLAN.md; it shapes what we build
   main board is USB-powered; on battery, plan on the satellite carrying its
   own cell. (Boards in this class don't switch VBUS for downstream devices.)
 
-## 1. The organ bus — a HAL for bodies (highest leverage)
+## 1. The organ bus — a HAL for bodies [DEFERRED]
+
+*Needs external hardware; stays as the roadmap. Sketched, not scheduled.*
 
 The single biggest SDK-prep item. If future sensors arrive over USB
 (CDC) or ESP-NOW, the firmware needs a **self-describing organ protocol**:
@@ -54,7 +64,7 @@ firmware body-agnostic. Anduril's Arduino-organ-controller idea plugs
 straight into this: the Arduino is just another organ that speaks the
 protocol.
 
-## 2. Identity — a self that persists
+## 2. Identity — a self that persists [v1]
 
 Transhumanist factor: the creature is a *continuing self*, not a
 reset-every-boot assistant.
@@ -74,7 +84,7 @@ reset-every-boot assistant.
   identity claim could live in NVS/SD, letting the embodied muse carry
   its agent-world identity into the physical room.
 
-## 3. On-device learning — the creature adapts
+## 3. On-device learning — the creature adapts [v1]
 
 - **Adaptive thresholds:** circadian quiet hours, fatigue rates, arousal
   baselines calibrate to the household over weeks. The diary is the
@@ -90,7 +100,7 @@ reset-every-boot assistant.
 Rule: learning happens on-device or from the user's own diary — never
 from a generic cloud profile. The creature adapts to *its* household.
 
-## 4. Memory prosthetic — cognitive extension
+## 4. Memory prosthetic — cognitive extension [v1]
 
 The most transhumanist layer: the device as an extension of Anduril's mind.
 
@@ -108,7 +118,10 @@ The most transhumanist layer: the device as an extension of Anduril's mind.
   account, no cloud copy unless the user opts in. This is a value, not
   just a privacy setting.
 
-## 5. Shared physiology — two bodies, one loop
+## 5. Shared physiology — two bodies, one loop [DEFERRED]
+
+*Needs the MAX30102 organ (and ERM/WS2812B for the haptic/aura halves).
+Stays as the roadmap.*
 
 - **MAX30102 → somatic coupling:** when Anduril holds the board, the
   creature's somatic state (arousal, tension) is partly *his* pulse. The
@@ -120,7 +133,7 @@ The most transhumanist layer: the device as an extension of Anduril's mind.
 - **Aura (WS2812B):** peripheral, glanceable state — the equivalent of
   blushing. No screen needed.
 
-## 6. Agency infrastructure — the gate as middleware
+## 6. Agency infrastructure — the gate as middleware [v1]
 
 The PROCEED/CAUTION/VETO decision gate should be **SDK middleware**, not
 board-file code: a hook in the action pipeline that any board inherits.
@@ -129,7 +142,9 @@ Reason codes logged to SD, live state on the aura. Self-authorship terms
 creature) stored on SD and shown on a settings screen. The user programs
 the creature's values; the gate enforces them; the log proves it.
 
-## 7. Social bodies — the ESP-NOW council
+## 7. Social bodies — the ESP-NOW council [DEFERRED]
+
+*Needs a second body. Stays as the roadmap.*
 
 Phase 4 already sketches this: multiple gadgets meshing over ESP-NOW,
 each with its own identity (section 2) and organ set (section 1),
@@ -137,15 +152,21 @@ sharing diary digests. The agent-neighborhood goal, with bodies. The
 organ protocol (section 1) should be designed from day one to address
 organs on *remote* bodies too — `body_id/organ/sensor` addressing.
 
-## What to build first (SDK-prep order)
+## What to build first — v1, bare board only
 
-1. Organ protocol spec (JSON-lines v1) — before any satellite exists.
-2. `muse_brain.c` subscribes by subsystem name (BUILD_PLAN Phase 2) —
-   design the subscription API for remote organs from the start.
-3. Decision gate as pipeline middleware — when the gate is implemented.
-4. Personal wake word "Lapis" — after bring-up, highest felt value.
-5. Speaker-ID for household members — after the wake word works.
-6. Dream report + "remember this" — after sleep consolidation lands.
+1. Instance identity in NVS — name, owner, birth timestamp. First boot.
+2. Personal wake word "Lapis" — it answers to its name.
+3. Sleep consolidation + dream report — needs the dedicated microSD.
+4. "Remember this" memory prosthetic — verbatim capture, cued recall.
+5. Speaker-ID for household members — the creature knows who is talking.
+6. Adaptive thresholds — circadian/fatigue calibrated to the household
+   from the diary.
+7. Gesture personalization — the IMU learns Anduril's shake/tilt.
+8. Decision gate as pipeline middleware — reason codes to SD.
+
+Deferred (needs organs): organ protocol + bus firmware, shared
+physiology (MAX30102), haptic language (ERM), aura (WS2812B),
+ESP-NOW council.
 
 ## Deliberately not on-device
 
