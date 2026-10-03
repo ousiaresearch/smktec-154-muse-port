@@ -14,6 +14,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
+#include "esp_system.h"   /* esp_random */
 
 static const char *TAG = "muse_identity";
 
@@ -49,10 +50,16 @@ int muse_identity_init(muse_identity_t *id)
         id->birth_utc = 0; /* backfilled when the clock is set */
         id->boot_count = 0;
         id->generation = 1;
+        id->seed = esp_random();   /* one soul, minted once */
+        id->growth_stage = 0;
+        id->care_days = 0;
         nvs_set_str(h, "name", id->name);
         nvs_set_str(h, "owner", id->owner);
         nvs_set_u32(h, "birth_utc", id->birth_utc);
         nvs_set_u32(h, "generation", id->generation);
+        nvs_set_u32(h, "seed", id->seed);
+        nvs_set_u32(h, "growth_stage", 0);
+        nvs_set_u32(h, "care_days", 0);
         ESP_LOGI(TAG, "minted identity: %s, generation %lu", id->name,
                  (unsigned long)id->generation);
     } else {
@@ -61,6 +68,9 @@ int muse_identity_init(muse_identity_t *id)
         nvs_get_u32(h, "birth_utc", &id->birth_utc);
         nvs_get_u32(h, "generation", &id->generation);
         nvs_get_u32(h, "boot_count", &id->boot_count);
+        nvs_get_u32(h, "seed", &id->seed);
+        nvs_get_u32(h, "growth_stage", &id->growth_stage);
+        nvs_get_u32(h, "care_days", &id->care_days);
     }
 
     id->boot_count++;
@@ -79,13 +89,30 @@ int muse_identity_factory_reset(void)
     esp_err_t err = nvs_open(MUSE_IDENTITY_NVS_NS, NVS_READWRITE, &h);
     if (err != ESP_OK)
         return err;
-    uint32_t gen = 1;
+    uint32_t gen = 1, seed = 0;
     nvs_get_u32(h, "generation", &gen);
+    nvs_get_u32(h, "seed", &seed);   /* read BEFORE the erase below */
     nvs_erase_all(h);
-    /* The next init mints generation+1: the creature remembers dying. */
+    /* The next init mints generation+1: the creature remembers dying.
+     * The seed survives: same soul, new life. */
     nvs_set_u32(h, "generation", gen + 1);
+    nvs_set_u32(h, "seed", seed ? seed : esp_random());
     nvs_commit(h);
     nvs_close(h);
     ESP_LOGW(TAG, "identity wiped; next boot is generation %lu", (unsigned long)(gen + 1));
     return 0;
+}
+
+int muse_identity_save(const muse_identity_t *id)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(MUSE_IDENTITY_NVS_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK)
+        return err;
+    nvs_set_u32(h, "growth_stage", id->growth_stage);
+    nvs_set_u32(h, "care_days", id->care_days);
+    nvs_set_u32(h, "seed", id->seed);
+    err = nvs_commit(h);
+    nvs_close(h);
+    return err;
 }

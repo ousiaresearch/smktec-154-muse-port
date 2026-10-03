@@ -426,11 +426,14 @@ muse_brain_state_t *smktec_brain(void)
     return s_brain_ready ? &s_brain : NULL;
 }
 
-/* Called on SLEEPY entry: the muse dreams (diary via the log sink). */
+/* Called on SLEEPY entry: the muse dreams (diary via the log sink).
+ * Growth is evaluated here; the identity is persisted afterwards. */
 void smktec_note_sleepy(bool entering)
 {
-    if (entering && s_brain_ready)
-        muse_brain_consolidate(&s_brain);
+    if (entering && s_brain_ready) {
+        muse_brain_consolidate(&s_brain, &s_identity);
+        muse_identity_save(&s_identity);
+    }
 }
 
 /* Battery voltage on GPIO1 through the board's divider; levels are

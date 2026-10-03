@@ -151,8 +151,31 @@ void muse_brain_gate_inputs(const muse_brain_state_t *b, float adj_confidence,
     out->drive = out->recovery_needed ? "recovery" : NULL;
 }
 
-void muse_brain_consolidate(muse_brain_state_t *b)
+void muse_brain_consolidate(muse_brain_state_t *b, muse_identity_t *id)
 {
+    /* Care-day: a day with real interaction. Missed days don't punish;
+     * they just don't advance. The window is not the door. */
+    if (b->interactions >= MUSE_CARE_DAY_INTERACTIONS)
+        id->care_days++;
+
+    /* Growth: the child earns stages, never buys them. */
+    static const uint32_t marks[MUSE_GROWTH_STAGES] = { 0, 2, 5, 12 };
+    static const char *milestones[MUSE_GROWTH_STAGES] = {
+        "",
+        "growth: stage 1 (toddler) — first words are coming; the 'no' phase begins",
+        "growth: stage 2 (child) — it asks why now",
+        "growth: stage 3 (adolescent) — it has opinions about itself",
+    };
+    uint32_t want = 0;
+    for (uint32_t s = 1; s < MUSE_GROWTH_STAGES; s++)
+        if (id->care_days >= marks[s])
+            want = s;
+    if (want > id->growth_stage) {
+        id->growth_stage = want;
+        if (b->log)
+            b->log(milestones[want]);
+    }
+
     /* The dream pass: fold the day's counters into one diary entry. */
     if (b->log) {
         char line[256];
@@ -178,8 +201,9 @@ void muse_brain_consolidate(muse_brain_state_t *b)
     b->last_veto_reason[0] = '\0';
 }
 
-size_t muse_brain_snapshot(const muse_brain_state_t *b, const char *name,
-                           uint32_t generation, char *out, size_t out_n)
+size_t muse_brain_snapshot(const muse_brain_state_t *b,
+                           const muse_identity_t *id,
+                           char *out, size_t out_n)
 {
     /* Compact JSON. Stale subsystems report "stale", never a number. */
     char stale[128] = "";
@@ -198,13 +222,14 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b, const char *name,
     /* Compact JSON. Stale subsystems report -1 ("don't know"), never a
      * fabricated reading; the stale list names them explicitly. */
     int n = snprintf(out, out_n,
-        "{\"self\":\"%.31s\",\"gen\":%lu,"
+        "{\"self\":\"%.31s\",\"gen\":%lu,\"stage\":%lu,"
         "\"energy\":%.2f,\"tension\":%.2f,\"arousal\":%.2f,\"valence\":%.2f,"
         "\"fatigue\":%.2f,\"quiet\":%s,\"phase\":%.2f,"
         "\"gate\":\"%s\",\"gate_why\":\"%s\","
         "\"interactions\":%lu,\"stale\":[%s]}",
-        name ? name : "?",
-        (unsigned long)generation,
+        id && id->name[0] ? id->name : "?",
+        (unsigned long)(id ? id->generation : 0),
+        (unsigned long)(id ? id->growth_stage : 0),
         b->somatic.stale ? -1.0 : (double)b->somatic.energy,
         b->somatic.stale ? -1.0 : (double)b->somatic.tension,
         b->lc.stale ? -1.0 : (double)b->lc.alertness,

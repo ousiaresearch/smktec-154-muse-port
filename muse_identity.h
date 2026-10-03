@@ -27,6 +27,9 @@ typedef struct {
     uint32_t birth_utc;   /* first-boot unix time; 0 if clock was unset */
     uint32_t boot_count;  /* increments every init */
     uint32_t generation;  /* increments on factory reset */
+    uint32_t seed;        /* minted once; survives factory reset */
+    uint32_t growth_stage;/* 0..3 — see GROWTH.md */
+    uint32_t care_days;   /* days with real interaction */
 } muse_identity_t;
 
 /*
@@ -40,6 +43,9 @@ int muse_identity_init(muse_identity_t *id);
 
 /* Wipe the namespace and start generation+1. The creature remembers dying. */
 int muse_identity_factory_reset(void);
+
+/* Persist growth fields (stage/care-days) after the dream pass. */
+int muse_identity_save(const muse_identity_t *id);
 
 #ifdef __cplusplus
 }

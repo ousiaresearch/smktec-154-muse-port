@@ -23,6 +23,7 @@
 #include <stdint.h>
 
 #include "muse_gate.h"
+#include "muse_identity.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -137,11 +138,17 @@ muse_gut_t muse_brain_suggest_gut(const muse_brain_state_t *b);
 void muse_brain_gate_inputs(const muse_brain_state_t *b, float adj_confidence,
                             muse_gut_t gut, muse_gate_inputs_t *out);
 
+/* Growth (see GROWTH.md): care-day threshold and stage care-day marks. */
+#define MUSE_CARE_DAY_INTERACTIONS 5u
+#define MUSE_GROWTH_STAGES 4u
+
 /*
- * The dream pass. Called on SLEEPY entry: folds the day's counters into
- * a diary entry via log(), then resets the counters. The muse dreams.
+ * The dream pass. Called on SLEEPY entry: evaluates the care-day, advances
+ * the growth stage at its thresholds, folds the day's counters into a
+ * diary entry via log(), then resets the counters. The muse dreams.
+ * Caller persists the identity afterwards (muse_identity_save).
  */
-void muse_brain_consolidate(muse_brain_state_t *b);
+void muse_brain_consolidate(muse_brain_state_t *b, muse_identity_t *id);
 
 /*
  * Turn-injection snapshot (the firmware half of return-line): serialize
@@ -153,8 +160,9 @@ void muse_brain_consolidate(muse_brain_state_t *b);
  *
  * Returns bytes written (excluding NUL); 0 if out_n is too small.
  */
-size_t muse_brain_snapshot(const muse_brain_state_t *b, const char *name,
-                           uint32_t generation, char *out, size_t out_n);
+size_t muse_brain_snapshot(const muse_brain_state_t *b,
+                           const muse_identity_t *id,
+                           char *out, size_t out_n);
 
 #ifdef __cplusplus
 }
