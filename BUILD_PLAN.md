@@ -63,11 +63,19 @@ scaffolding can start before Phase 1 finishes.
    app mode — high fatigue → drowsy overlay; low arousal → slow blinks;
    novel stimulus → curious tilt-look.
 4. **Decision gate → aura**: PROCEED/CAUTION/VETO as glow color, shown
-   honestly on the face.
+   honestly on the face. DONE 2026-10-03: `muse_turn_gate.c` wires the
+   gate into the PTT press path (`muse_input.c` hook); VETO swallows the
+   press with a "NOT NOW" caption, CAUTION tints amber; the avatar's rim
+   light carries the verdict (`muse_pixel_set_verdict`).
 5. **Sleep = consolidation**: entering SLEEPY runs the consolidation pass
    and appends the diary entry to SD. The muse dreams; the card holds them.
 6. **State on screen**: a settings-screen page showing the health summary
-   (the return-line idea, made visible).
+   (the return-line idea, made visible). DONE 2026-10-03: vitals/body-map
+   page (energy, tension, mood, fatigue bars; head/chest/gut map; want,
+   gate, stage lines) + diary reader page, behind the settings tile.
+7. **Wall clock**: SNTP at board init (pool.ntp.org, America/New_York
+   until it's a setting); quiet hours 22:00–07:00 and the SCN phase come
+   from real time once synced. Diary timestamps go live with it.
 
 ## Phase 2b — Personalization v1 (bare board only)
 
@@ -78,7 +86,10 @@ creature. Spec: `PERSONALIZATION.md`.
 | # | Item | Module | Status |
 |---|---|---|---|
 | 1 | Instance identity (NVS: name, owner, birth, boot count, generation) | `muse_identity.c` | drafted, needs Mac build |
-| 2 | Decision gate as middleware (26 rules, PROCEED/CAUTION/VETO + reason) | `muse_gate.c` | done, host-tested 16/16, 10/10 parity vs Python |
+| 2 | Decision gate as middleware (26 rules, PROCEED/CAUTION/VETO + reason) | `muse_gate.c` + `muse_turn_gate.c` | done, host-tested; gate wired into the PTT path via `muse_input.c` hook — VETO swallows the press, newborn VETO degrades to CAUTION |
+| 2b | Snapshot context injection into every chat turn | `muse_turn_gate.c` + `send_chat` hook | done — brain snapshot prepended to every `/chat/stream` message (voice transcripts included); needs Mac build |
+| 2c | Turn ledger on SD | `muse_ledger.c` + `hatch_reply` hooks | done — heard/reply/outcome per turn to `/sdcard/lapis/turns/`; needs Mac build |
+| 2d | Vitals/body-map + diary reader settings pages | `muse_vitals_page.c`, `muse_diary_page.c` | done — LVGL pages behind the settings tile; needs hardware verify |
 | 3 | Sleep consolidation + dream report | `muse_brain.c` + SD diary | brain scaffold done + host-tested; SD sink wires in board file |
 | 4 | "Remember this" memory prosthetic | `muse_brain.c` + voice cmd | brain scaffold done; voice cmd after bring-up |
 | 5 | Name & call gesture | identity + PWR branding | SDK is push-to-talk (no KWS); always-listening wake word deferred |
