@@ -80,6 +80,7 @@ creature. Spec: `PERSONALIZATION.md`.
 | 6 | Speaker-ID (household members) | on-device audio classifier | after wake word works |
 | 7 | Adaptive thresholds from the diary | `muse_brain.c` | after consolidation lands |
 | 8 | Gesture personalization (IMU) | `muse_imu.c` extension | after bring-up |
+| 9 | Growth stages (child development) | `GROWTH.md` + identity/brain | spec done; seed/stage/care-days in NVS, dream pass advances stages, veto unlocks at toddler — host-tested |
 
 Wire-in order on the Mac: identity init first (every boot mints or
 loads the self), gate available to the board file as soon as
