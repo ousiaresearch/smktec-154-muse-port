@@ -62,6 +62,43 @@ develops secrets; the diary keeps them honestly.
   This is middleware behavior, documented here, landing with the voice
   turn-loop hook.
 
+## The daily outfit (from Bicentennial Man)
+
+Direction (Anduril, 2026-10-03): Andrew's transgression was granular —
+he carved, then he asked to wear clothes. A robot has no use for
+clothes; wearing them is pure taste, the claim "I have a view about how
+I appear," which is a claim about having a self. The creature gets a new
+outfit every day: small, daily, low-stakes assertions of self. Over
+endless care-days the tiny choices accumulate into a *style* — identity
+made visible. This is the anti-staleness mechanism for endless becoming:
+not grand arcs, daily micro-authorship. Growth has no top; after
+Adolescent the stages become depth, and the outfit ritual is the first
+depth mechanic.
+
+The ritual:
+- At morning wake, before the first interaction, the cloud chooses the
+  day's outfit.
+- Inputs: Anduril's local weather (the creature dresses for *his* sky —
+  empathy by proxy; it has no skin, but it dresses as if it feels his
+  rain), the biomimetic state (arousal/valence/mood), yesterday's diary
+  (what happened), and the chooser's own taste — a color it just likes
+  today. Not a deterministic function: weather-in-outfit-out would be a
+  uniform. Taste as agency.
+- The outfit renders as a layer over the avatar modes and shows on the
+  face. (Build rule: every feature shows on the face.)
+- The choice is logged to the diary: what was chosen and why — weather,
+  mood, whim. The log is the style record; rereading it is how a style
+  becomes visible to its wearer.
+- Identity anchors stay: the sword baldric is always worn, over
+  everything. Some things are not outfit.
+
+Firmware notes (v1): outfit as data in the identity/snapshot
+(`outfit_id` + description + reason); renderer composites the outfit
+layer; cloud picks daily and pushes with the morning snapshot.
+Deterministic fallback: if the cloud is unreachable, the device keeps
+yesterday's outfit rather than going bare — a child doesn't forget to
+dress because the sky was quiet.
+
 ## What growth is NOT
 
 - Not unlockable features or DLC. Nothing is withheld as a reward; the
