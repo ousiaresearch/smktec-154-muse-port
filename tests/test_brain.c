@@ -135,6 +135,81 @@ int main(void)
     CHECK(id7.care_days == 3 && id7.growth_stage == 1,
           "growth: quiet day changes nothing");
 
+    /* Homeostatic drive: deviation from setpoint, named need. */
+    muse_brain_state_t b8;
+    muse_brain_init(&b8, cap_log);
+    muse_brain_feed_battery(&b8, 3.2f, false, 1000);  /* energy ~0.17 */
+    char need[16];
+    float drive = muse_brain_drive(&b8, need, sizeof(need));
+    CHECK(drive > 0.5f && strcmp(need, "hunger") == 0,
+          "drive: low battery reads as hunger");
+    /* Fresh brain: no invented needs. */
+    muse_brain_state_t b8b;
+    muse_brain_init(&b8b, cap_log);
+    drive = muse_brain_drive(&b8b, need, sizeof(need));
+    CHECK(drive == 0.0f && strcmp(need, "none") == 0,
+          "drive: stale brain wants nothing");
+
+    /* Appraisal gut (Scherer order): suddenness -> pleasantness ->
+     * conduciveness -> coping. */
+    muse_brain_state_t b9;
+    muse_brain_init(&b9, cap_log);
+    muse_brain_feed_battery(&b9, 3.2f, false, 1000);
+    CHECK(muse_brain_suggest_gut(&b9) == MUSE_GUT_PAUSE,
+          "appraisal: critical energy -> PAUSE (goal conduciveness)");
+    muse_brain_feed_valence(&b9, -0.7f, 2000);
+    CHECK(muse_brain_suggest_gut(&b9) == MUSE_GUT_DOUBT,
+          "appraisal: bad valence -> DOUBT (pleasantness)");
+    muse_brain_feed_valence(&b9, -0.3f, 3000);  /* valence now -1.0 */
+    muse_brain_feed_battery(&b9, 3.05f, false, 4000);  /* energy ~0.04 */
+    CHECK(muse_brain_suggest_gut(&b9) == MUSE_GUT_STOP,
+          "appraisal: deeply bad + no resources -> STOP");
+
+    /* ALMA medium layer: mood tracks valence slowly. */
+    muse_brain_state_t b10;
+    muse_brain_init(&b10, cap_log);
+    muse_brain_feed_valence(&b10, 0.8f, 1000);
+    float mood0 = b10.somatic.mood;
+    for (int i = 0; i < 20; i++)
+        muse_brain_tick(&b10, 2000 + i * 2000, false);
+    CHECK(b10.somatic.mood > mood0 && b10.somatic.mood < 0.8f,
+          "mood: slow EMA toward valence");
+    CHECK(b10.somatic.valence < 0.8f,
+          "valence: decays faster than mood");
+
+    /* Curiosity as prediction error: surprise drives vta. */
+    muse_brain_state_t b11;
+    muse_brain_init(&b11, cap_log);
+    muse_brain_feed_battery(&b11, 4.0f, false, 1000);
+    muse_brain_feed_battery(&b11, 4.0f, false, 2000);
+    float calm_vta = b11.vta;
+    muse_brain_feed_battery(&b11, 3.3f, false, 3000);  /* sudden drop */
+    CHECK(b11.vta > calm_vta + 0.2f,
+          "curiosity: prediction error spikes vta");
+
+    /* Learning progress (Oudeyer): improving success accrues mastery,
+     * measured against the persisted baseline across days (deep sleep
+     * wipes RAM between them). */
+    muse_brain_state_t b12;
+    muse_identity_t id12;
+    memset(&id12, 0, sizeof(id12));
+    id12.learn_base[0] = id12.learn_base[1] = 0.5f;
+    for (int day = 0; day < 2; day++) {
+        muse_brain_init(&b12, cap_log);            /* deep sleep wiped RAM */
+        muse_brain_learning_restore(&b12, &id12);  /* baseline back */
+        for (int i = 0; i < 8; i++) {
+            muse_brain_feed_interaction(&b12, (uint32_t)(i * 1000));
+            /* day 0: mediocre; day 1: clearly better, both domains */
+            float s = day == 0 ? 0.4f : 0.85f;
+            muse_brain_feed_learning(&b12, 0, s, (uint32_t)(i * 1000));
+            muse_brain_feed_learning(&b12, 1, s, (uint32_t)(i * 1000));
+        }
+        muse_brain_consolidate(&b12, &id12);
+    }
+    CHECK(id12.mastery > 0, "learning: sustained progress earns mastery");
+    CHECK(id12.learn_base[0] > 0.5f,
+          "learning: capability baseline ratchets up");
+
     printf(failures ? "\n%d FAILURES\n" : "\nall brain tests passed\n", failures);
     return failures != 0;
 }
