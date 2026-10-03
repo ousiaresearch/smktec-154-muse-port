@@ -35,6 +35,11 @@ everything physical: the Mac, the board, the SDK token, his eyes on hardware.
 6. **Feature bring-up, in order**: display → backlight → touch → buttons →
    speaker → mics (stereo check) → IMU gestures → BLE pairing → Wi-Fi →
    tunnel → OTA.
+7. **Continuity test** (the good stuff): once voice works, ask the
+   creature something only Lapis would know — e.g. "what did we decide
+   about private dreams?" If it answers from our shared history, the
+   gadget reaches the same agent. If not, the snapshot handoff
+   (`muse_brain_snapshot`) is the bridge, and we design around that.
 7. **Wire the IMU in**: `muse_imu_init(s_i2c)` + gesture→mode mapping in the
    board file; extend `muse_mode_t` with SLEEPY/DIZZY; add
    `muse_pixel_set_facing()` prototype. (See INTEGRATION.md §9.)
