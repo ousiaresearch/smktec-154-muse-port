@@ -19,6 +19,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "muse_gate.h"
@@ -141,6 +142,19 @@ void muse_brain_gate_inputs(const muse_brain_state_t *b, float adj_confidence,
  * a diary entry via log(), then resets the counters. The muse dreams.
  */
 void muse_brain_consolidate(muse_brain_state_t *b);
+
+/*
+ * Turn-injection snapshot (the firmware half of return-line): serialize
+ * the brain into compact JSON for appending to the live turn — never to
+ * the system prompt. ≤1100 chars so it can't crowd out the conversation.
+ * Never fails and never blocks: stale reads are reported as "stale",
+ * never invented. A context serializer must never be the reason a reply
+ * doesn't happen.
+ *
+ * Returns bytes written (excluding NUL); 0 if out_n is too small.
+ */
+size_t muse_brain_snapshot(const muse_brain_state_t *b, const char *name,
+                           uint32_t generation, char *out, size_t out_n);
 
 #ifdef __cplusplus
 }

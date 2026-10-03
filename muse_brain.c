@@ -177,3 +177,46 @@ void muse_brain_consolidate(muse_brain_state_t *b)
     b->novel_count = 0;
     b->last_veto_reason[0] = '\0';
 }
+
+size_t muse_brain_snapshot(const muse_brain_state_t *b, const char *name,
+                           uint32_t generation, char *out, size_t out_n)
+{
+    /* Compact JSON. Stale subsystems report "stale", never a number. */
+    char stale[128] = "";
+    size_t sp = 0;
+    const struct { bool s; const char *n; } subs[] = {
+        { b->scn.stale, "scn" }, { b->somatic.stale, "somatic" },
+        { b->fatigue.stale, "fatigue" }, { b->lc.stale, "lc" },
+        { b->dmn.stale, "dmn" }, { b->hippocampus.stale, "hippocampus" },
+    };
+    for (size_t i = 0; i < sizeof(subs) / sizeof(subs[0]); i++) {
+        if (subs[i].s && sp + 10 < sizeof(stale))
+            sp += snprintf(stale + sp, sizeof(stale) - sp,
+                           "%s\"%s\"", sp ? "," : "", subs[i].n);
+    }
+
+    /* Compact JSON. Stale subsystems report -1 ("don't know"), never a
+     * fabricated reading; the stale list names them explicitly. */
+    int n = snprintf(out, out_n,
+        "{\"self\":\"%.31s\",\"gen\":%lu,"
+        "\"energy\":%.2f,\"tension\":%.2f,\"arousal\":%.2f,\"valence\":%.2f,"
+        "\"fatigue\":%.2f,\"quiet\":%s,\"phase\":%.2f,"
+        "\"gate\":\"%s\",\"gate_why\":\"%s\","
+        "\"interactions\":%lu,\"stale\":[%s]}",
+        name ? name : "?",
+        (unsigned long)generation,
+        b->somatic.stale ? -1.0 : (double)b->somatic.energy,
+        b->somatic.stale ? -1.0 : (double)b->somatic.tension,
+        b->lc.stale ? -1.0 : (double)b->lc.alertness,
+        b->somatic.stale ? -9.0 : (double)b->somatic.valence,
+        b->fatigue.stale ? -1.0 : (double)b->fatigue.level,
+        (!b->scn.stale && b->scn.quiet_hours) ? "true" : "false",
+        b->scn.stale ? -1.0 : (double)b->scn.phase,
+        muse_gate_verdict_name(b->decisions.last.verdict),
+        b->decisions.last.reason ? b->decisions.last.reason : "proceed",
+        (unsigned long)b->interactions,
+        stale);
+    if (n < 0 || (size_t)n >= out_n)
+        return 0;
+    return (size_t)n;
+}

@@ -182,6 +182,15 @@ Deferred (needs organs): organ protocol + bus firmware, shared
 physiology (MAX30102), haptic language (ERM), aura (WS2812B),
 ESP-NOW council.
 
+## 8. Seed-derived individuality (from musegotchi)
+
+Musegotchi's voice "is not recorded. It is generated from its seed, so
+your pet's voice is its own — no two pets sound the same." Import: the
+NVS identity holds a random seed minted at first boot; the avatar
+renderer and (later) voice persona derive deterministic variations from
+it — speckle pattern, blink cadence, chirp pitch. Two Lapis instances
+are never identical, and it costs nothing to ship.
+
 ## Deliberately not on-device
 
 Full embeddings, prefrontal/tom/values inference, heavy model fitting —

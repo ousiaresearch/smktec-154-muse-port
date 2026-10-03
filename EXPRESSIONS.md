@@ -52,6 +52,21 @@ orientation-aware SPEAKING (lean toward the person holding it).
 screen; knock-knock (triple tap) as a secret knock opening a hidden menu;
 mic+IMU combo — only listen when picked up (privacy gesture).
 
+## Design principles (imported from musegotchi)
+
+- **Tell, don't show bars.** The creature asks for things by *telling you*,
+  not via dashboards. The face carries state as behavior; the vitals
+  body-map is a settings page, not the primary UI. Watch the pet, not
+  the meters.
+- **Growth with forgiveness.** Care over days deepens the creature
+  (cf. musegotchi's day 2/4/8 windows); a missed day is a missed window,
+  not a locked door — it says so, and it can catch up.
+- **No visible streaks.** Internal counters (interactions, growth) stay
+  off the face. Nothing gamified.
+- **Keeps what you did, never a fact about you.** The diary records
+  behavior and events, not personal data extraction. No export, no
+  leaderboard, no network call for the diary's sake.
+
 ## Hardware to verify on arrival
 
 - IMU I2C address (expect 0x6B) and that it shares SDA 42 / SCL 41 cleanly
