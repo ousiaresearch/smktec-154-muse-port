@@ -41,6 +41,8 @@ typedef struct {
      * is parameters, not episodes): */
     float mood;               /* ω: slow confidence offset (Hesp/Joffily) */
     float familiarity[16];    /* the meta-model Q: what it already knows */
+    float bond_lambda;        /* owner bond strength λ (0 = never saved) */
+    float bond_beta;          /* owner signal predictability β (0 = never) */
 } muse_identity_t;
 
 /*

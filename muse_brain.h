@@ -143,6 +143,21 @@ typedef struct {
     uint32_t updated_ms;
 } muse_decisions_t;
 
+/* L8 social (Sanyal; partner-precision paper; SYSTEMS.md). Others
+ * enter through the homeostat, not the objective: d^cpl = d^self +
+ * λ·d^other perturbs our own homeostatic error before planning.
+ * Partner precision β tracks predictability of their signals (not
+ * payoff) and sharpens commitment. */
+#define MUSE_NPARTNERS 4
+
+typedef struct {
+    bool active;
+    float distress;    /* Ê^other: estimated partner distress 0..1 */
+    float lambda;      /* bond strength: coupling gain */
+    float beta;        /* partner precision: signal predictability */
+    int last_sign;     /* last social-event sign (consistency tracking) */
+} muse_partner_t;
+
 /* L4 appraisal + continuous vote (Smith & Read; Cathexis; EMA;
  * SYSTEMS.md). Drives stay modular; they combine late, at the action:
  * score(a) = Σ_d κ_d · r_d(a) — multiplicative within a drive
@@ -241,6 +256,9 @@ typedef struct {
      * attention IS learning-rate allocation. */
     float precision[MUSE_NDRIVES];
     int attended;         /* drive id holding the budget, or −1 if sated */
+    /* L8 social: partner-indexed coupling + precision. */
+    muse_partner_t partners[MUSE_NPARTNERS];
+    float couple;         /* λ·d^other (partner 0): felt social distress */
     /* Curiosity predictor (research intake: Pathak et al. 2017, firmware
      * scale): EMA predictors per channel; surprise = |prediction-error|. */
     float pred_energy;
@@ -289,6 +307,11 @@ void muse_brain_set_quiet_hours(muse_brain_state_t *b, bool quiet,
  * over minutes. What the creature "feels" is drive change plus pulse. */
 void muse_brain_feed_valence(muse_brain_state_t *b, float delta,
                              uint32_t now_ms);
+
+/* Social feeder (Sanyal): estimated distress of partner idx (0..3),
+ * 0..1. Partner 0 is the owner. Out-of-range idx is ignored. */
+void muse_brain_feed_partner(muse_brain_state_t *b, int idx,
+                             float distress01, uint32_t now_ms);
 
 
 /* Fill the appraisal frames from current state (pure derivation). */

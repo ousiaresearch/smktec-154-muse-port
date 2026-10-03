@@ -299,7 +299,14 @@ keep them separate channels.
    NVS (new identity fields, board restores on boot). info_gain resets
    by design → the creature wakes up bored of yesterday's routines
    (HHVG Q7). 99/99 host checks green.
-9. **Social stubs** — `d^cpl`, partner precision (activate with counterparts).
+9. **Social stubs** — DONE 2026-10-03. d^cpl = d^self + λ·d^other
+   (Sanyal): partner distress perturbs the creature's own homeostatic
+   error before the valence differentiator — load-sensitive (couples
+   strongly only when regulated). Partner precision β tracks signal
+   predictability and scales vote margins in the middleware.
+   feed_valence feeds the owner bond (distress/λ/β); feed_partner()
+   for explicit estimates; bond (λ,β) persists via NVS, distress
+   resets. 118/118 host checks green.
 10. **Setpoint drift + sensor recentering** (slowest loops; last).
 
 ## Honest gaps (the papers don't give us these)

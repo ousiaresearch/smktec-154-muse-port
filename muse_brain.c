@@ -25,6 +25,9 @@ void muse_brain_init(muse_brain_state_t *b, muse_brain_log_fn log)
     for (int d = 0; d < MUSE_NDRIVES; d++)
         b->precision[d] = MUSE_PRECISION_K / MUSE_NDRIVES;
     b->attended = -1;
+    /* Partner 0 is the owner: a neutral starting bond. */
+    b->partners[0].lambda = 0.5f;
+    b->partners[0].beta = 0.5f;
     b->pred_energy = 0.5f;
     b->pred_tension = 0.0f;
     for (int d = 0; d < MUSE_LEARN_DOMAINS; d++) {
@@ -84,7 +87,18 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
      * sign(improvement acceleration); sign flips name relief and
      * disappointment. */
     if (!b->somatic.stale) {
-        float d = raw_drive(b);
+        float d_raw = raw_drive(b);
+        /* L8 social coupling (Sanyal): d^cpl = d^self + λ·d^other.
+         * Partner distress perturbs our own homeostatic error BEFORE
+         * planning (the differentiator below) — not as a reward term.
+         * Load-sensitive: we couple strongly only when regulated
+         * ourselves (no rescue under high metabolic load). */
+        float lam = 0.0f;
+        if (b->partners[0].active)
+            lam = b->partners[0].lambda * (1.0f - d_raw);
+        float d = d_raw + lam * b->partners[0].distress;
+        if (d > 1.0f) d = 1.0f;
+        b->couple = lam * b->partners[0].distress;
         b->affect_pulse *= MUSE_DECAY_MEDIUM;
         float v_prev = b->somatic.valence;
         float v;
@@ -121,6 +135,7 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
         b->somatic.valence *= MUSE_DECAY_FAST;
         b->affect_pulse *= MUSE_DECAY_MEDIUM;
         b->drive_reward = 0.0f;
+        b->couple = 0.0f;
         b->emotion = MUSE_EMO_CALM;
         b->drive_seeded = false;
     }
@@ -224,6 +239,16 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
         if (a_target > 1.0f) a_target = 1.0f;
         b->ach_alpha += (a_target - b->ach_alpha) * (1.0f - MUSE_DECAY_SLOW);
     }
+
+    /* L8 social: partner distress estimates decay without fresh
+     * evidence; precision relaxes toward neutral (forgetting —
+     * confidence must not outlive evidence, cf. the paper's
+     * confidence-revision lag). */
+    for (int i = 0; i < MUSE_NPARTNERS; i++) {
+        b->partners[i].distress *= MUSE_DECAY_MEDIUM;
+        b->partners[i].beta += (0.5f - b->partners[i].beta) *
+                              (1.0f - MUSE_DECAY_SLOW);
+    }
     /* Mood ω (Hesp level-2 / Joffily eq. 4): slow EMA of derived
      * valence — signed model-fitness. This is what persists across
      * sleep and what gates learning in step 2. */
@@ -301,8 +326,38 @@ void muse_brain_feed_valence(muse_brain_state_t *b, float delta,
      * not a valence assignment. */
     float p = b->affect_pulse + delta;
     b->affect_pulse = p > 1.0f ? 1.0f : (p < -1.0f ? -1.0f : p);
+    /* Social channel: the same event updates the owner bond. A pet
+     * says the owner is content (distress down, bond up); an error
+     * says they're upset (distress up, bond down). Signal consistency
+     * trains partner precision β (predictability, not payoff). */
+    muse_partner_t *pt = &b->partners[0];
+    pt->active = true;
+    float dd = pt->distress - delta * 0.5f;
+    pt->distress = dd < 0.0f ? 0.0f : (dd > 1.0f ? 1.0f : dd);
+    float nl = pt->lambda + (delta > 0.0f ? 0.02f : -0.02f);
+    pt->lambda = nl < 0.1f ? 0.1f : (nl > 0.9f ? 0.9f : nl);
+    int s = (delta > 0.05f) ? 1 : (delta < -0.05f ? -1 : 0);
+    if (s != 0) {
+        if (pt->last_sign != 0) {
+            float c = (s == pt->last_sign) ? 1.0f : 0.0f;
+            pt->beta += (c - pt->beta) * 0.2f;
+        }
+        pt->last_sign = s;
+    }
     b->somatic.updated_ms = now_ms;
     b->somatic.stale = false;
+}
+
+void muse_brain_feed_partner(muse_brain_state_t *b, int idx,
+                             float distress01, uint32_t now_ms)
+{
+    (void)now_ms;
+    if (idx < 0 || idx >= MUSE_NPARTNERS)
+        return;
+    muse_partner_t *pt = &b->partners[idx];
+    pt->active = true;
+    pt->distress = distress01 < 0.0f ? 0.0f :
+                   (distress01 > 1.0f ? 1.0f : distress01);
 }
 
 void muse_brain_appraise(muse_brain_state_t *b)
@@ -475,10 +530,13 @@ float muse_brain_stress_window(const muse_brain_state_t *b)
 
 void muse_brain_sleep_save(const muse_brain_state_t *b, muse_identity_t *id)
 {
-    /* What crosses sleep is parameters, not episodes: ω and Q. */
+    /* What crosses sleep is parameters, not episodes: ω, Q, and the
+     * owner bond (λ, β). Partner distress is fast — it resets. */
     id->mood = b->somatic.mood;
     for (int i = 0; i < 16; i++)
         id->familiarity[i] = b->familiarity[i];
+    id->bond_lambda = b->partners[0].lambda;
+    id->bond_beta = b->partners[0].beta;
 }
 
 void muse_brain_sleep_restore(muse_brain_state_t *b,
@@ -487,6 +545,13 @@ void muse_brain_sleep_restore(muse_brain_state_t *b,
     b->somatic.mood = id->mood;
     for (int i = 0; i < 16; i++)
         b->familiarity[i] = id->familiarity[i];
+    /* 0.0 = never saved: keep init's neutral bond. */
+    if (id->bond_lambda > 0.0f) {
+        b->partners[0].lambda = id->bond_lambda;
+        b->partners[0].active = true;
+    }
+    if (id->bond_beta > 0.0f)
+        b->partners[0].beta = id->bond_beta;
     /* info_gain is RAM-only by design: it resets to 0, so morning
      * boredom = familiarity × 1 — the creature wakes up bored of
      * yesterday's routines (HHVG Q7), and seeks novelty. */
@@ -743,7 +808,7 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
         "\"energy\":%.2f,\"tension\":%.2f,\"arousal\":%.2f,\"valence\":%.2f,"
         "\"emotion\":\"%s\",\"boredom\":%.2f,\"vote\":\"%s\",\"attend\":\"%s\","
         "\"gamma\":%.2f,\"alpha\":%.2f,"
-        "\"mood\":%.2f,\"drive\":%.2f,\"reward\":%.2f,\"need\":\"%s\","
+        "\"mood\":%.2f,\"drive\":%.2f,\"reward\":%.2f,\"other\":%.2f,\"need\":\"%s\","
         "\"fatigue\":%.2f,\"quiet\":%s,\"phase\":%.2f,"
         "\"gate\":\"%s\",\"gate_why\":\"%s\","
         "\"interactions\":%lu,\"stale\":[%s]}",
@@ -761,7 +826,7 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
         (double)b->ht_gamma,
         (double)b->ach_alpha,
         b->somatic.stale ? -9.0 : (double)b->somatic.mood,
-        (double)drive, (double)b->drive_reward, need,
+        (double)drive, (double)b->drive_reward, (double)b->couple, need,
         b->fatigue.stale ? -1.0 : (double)b->fatigue.level,
         (!b->scn.stale && b->scn.quiet_hours) ? "true" : "false",
         b->scn.stale ? -1.0 : (double)b->scn.phase,

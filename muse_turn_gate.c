@@ -76,6 +76,11 @@ bool muse_turn_gate_veto(void)
      * advisory CAUTION when the creature is eager (boredom-driven). */
     float margin = 0.0f;
     muse_action_t vote = muse_brain_vote(s_brain, &margin);
+    /* Partner precision sharpens commitment (partner-precision paper):
+     * a predictable owner makes the vote's margins count more; an
+     * unpredictable one keeps the creature cautious. No social
+     * history yet → β=0.5 → unchanged. */
+    margin *= 0.5f + s_brain->partners[0].beta;
     muse_gate_verdict_t resolved = muse_resolve_verdict(r.verdict, vote, margin);
     if (resolved != r.verdict) {
         r.verdict = resolved;

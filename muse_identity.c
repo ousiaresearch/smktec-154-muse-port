@@ -67,6 +67,8 @@ int muse_identity_init(muse_identity_t *id)
         nvs_set_blob(h, "mood", &mood0, sizeof(mood0));
         float fam0[16] = { 0 };
         nvs_set_blob(h, "familiarity", fam0, sizeof(fam0));
+        float bond0[2] = { 0.0f, 0.0f };
+        nvs_set_blob(h, "bond", bond0, sizeof(bond0));
         ESP_LOGI(TAG, "minted identity: %s, generation %lu", id->name,
                  (unsigned long)id->generation);
     } else {
@@ -89,6 +91,12 @@ int muse_identity_init(muse_identity_t *id)
         size_t flen = sizeof(id->familiarity);
         if (nvs_get_blob(h, "familiarity", id->familiarity, &flen) != ESP_OK)
             memset(id->familiarity, 0, sizeof(id->familiarity));
+        float bond[2] = { 0.0f, 0.0f };
+        size_t bondlen = sizeof(bond);
+        if (nvs_get_blob(h, "bond", bond, &bondlen) == ESP_OK) {
+            id->bond_lambda = bond[0];
+            id->bond_beta = bond[1];
+        }
     }
 
     id->boot_count++;
@@ -133,6 +141,8 @@ int muse_identity_save(const muse_identity_t *id)
     nvs_set_blob(h, "learn_base", id->learn_base, sizeof(id->learn_base));
     nvs_set_blob(h, "mood", &id->mood, sizeof(id->mood));
     nvs_set_blob(h, "familiarity", id->familiarity, sizeof(id->familiarity));
+    float bond[2] = { id->bond_lambda, id->bond_beta };
+    nvs_set_blob(h, "bond", bond, sizeof(bond));
     nvs_set_u32(h, "seed", id->seed);
     err = nvs_commit(h);
     nvs_close(h);

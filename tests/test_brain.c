@@ -535,6 +535,75 @@ int main(void)
     CHECK(b29.boredom > 0.6f,
           "sleep: wakes up bored of yesterday's routines");
 
+    /* L8 social (Sanyal; partner-precision paper; SYSTEMS.md step 9). */
+    /* Coupling: the owner's distress perturbs our homeostatic error. */
+    muse_brain_state_t b30;
+    muse_brain_init(&b30, cap_log);
+    muse_brain_feed_battery(&b30, 4.0f, false, 1000);  /* healthy */
+    muse_brain_tick(&b30, 2000, false);                /* seed */
+    muse_brain_feed_partner(&b30, 0, 0.8f, 3000);      /* owner upset */
+    muse_brain_tick(&b30, 4000, false);
+    CHECK(b30.somatic.valence < -0.5f,
+          "social: owner's distress hurts (coupled homeostat)");
+    CHECK(b30.couple > 0.3f, "social: coupling term reported");
+    /* Load-sensitive: an exhausted creature couples less. */
+    muse_brain_state_t b31;
+    muse_brain_init(&b31, cap_log);
+    muse_brain_feed_battery(&b31, 3.0f, false, 1000);  /* hunger 0.8 */
+    b31.fatigue.level = 0.7f; b31.fatigue.stale = false;
+    b31.fatigue.updated_ms = 1000;                     /* drive ~0.97 */
+    muse_brain_tick(&b31, 2000, false);
+    muse_brain_feed_partner(&b31, 0, 0.1f, 3000);
+    muse_brain_tick(&b31, 4000, false);
+    CHECK(b31.somatic.valence > b30.somatic.valence,
+          "social: no rescue under high metabolic load");
+    /* feed_valence feeds the owner bond too. */
+    muse_brain_state_t b32;
+    muse_brain_init(&b32, cap_log);
+    CHECK(b32.partners[0].active == false, "social: bond starts inactive");
+    muse_brain_feed_valence(&b32, -1.0f, 1000);
+    CHECK(b32.partners[0].active == true, "social: events activate the bond");
+    CHECK(b32.partners[0].distress > 0.3f,
+          "social: error says the owner is upset");
+    CHECK(b32.partners[0].lambda < 0.5f, "social: error strains the bond");
+    /* Partner precision: consistent signals raise β, flips lower it. */
+    muse_brain_state_t b33;
+    muse_brain_init(&b33, cap_log);
+    muse_brain_feed_valence(&b33, 0.5f, 1000);
+    muse_brain_feed_valence(&b33, 0.5f, 2000);
+    muse_brain_feed_valence(&b33, 0.5f, 3000);
+    CHECK(b33.partners[0].beta > 0.6f,
+          "social: consistent owner raises precision");
+    muse_brain_feed_valence(&b33, -0.5f, 4000);
+    muse_brain_feed_valence(&b33, 0.5f, 5000);
+    muse_brain_feed_valence(&b33, -0.5f, 6000);
+    CHECK(b33.partners[0].beta < 0.6f,
+          "social: erratic owner lowers precision");
+    /* Bond persists across sleep; distress doesn't. */
+    muse_brain_state_t b34;
+    muse_identity_t id34;
+    memset(&id34, 0, sizeof(id34));
+    muse_brain_init(&b34, cap_log);
+    muse_brain_feed_valence(&b34, 0.5f, 1000);
+    muse_brain_feed_valence(&b34, 0.5f, 2000);
+    muse_brain_consolidate(&b34, &id34);
+    CHECK(id34.bond_lambda > 0.5f, "social: bond strength persists");
+    muse_brain_state_t b35;
+    muse_brain_init(&b35, cap_log);
+    muse_brain_sleep_restore(&b35, &id34);
+    CHECK(fabsf(b35.partners[0].lambda - id34.bond_lambda) < 1e-6f,
+          "social: bond restored after deep sleep");
+    CHECK(b35.partners[0].distress == 0.0f,
+          "social: distress is fast, doesn't persist");
+    /* feed_partner bounds-checks. */
+    muse_brain_feed_partner(&b35, 9, 1.0f, 7000);
+    muse_brain_feed_partner(&b35, -1, 1.0f, 7000);
+    CHECK(b35.partners[0].distress == 0.0f, "social: bad idx ignored");
+    char snap30[1152];
+    CHECK(muse_brain_snapshot(&b30, NULL, snap30, sizeof(snap30)) > 0 &&
+          strstr(snap30, "\"other\"") != NULL,
+          "social: snapshot reports coupling");
+
     printf(failures ? "\n%d FAILURES\n" : "\nall brain tests passed\n", failures);
     return failures != 0;
 }
