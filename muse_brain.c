@@ -22,6 +22,9 @@ void muse_brain_init(muse_brain_state_t *b, muse_brain_log_fn log)
     b->na_temp = 0.5f;            /* Doya β starts balanced */
     b->ht_gamma = MUSE_HT_GAMMA_BASE;
     b->ach_alpha = MUSE_ACH_ALPHA_BASE;
+    for (int d = 0; d < MUSE_NDRIVES; d++)
+        b->precision[d] = MUSE_PRECISION_K / MUSE_NDRIVES;
+    b->attended = -1;
     b->pred_energy = 0.5f;
     b->pred_tension = 0.0f;
     for (int d = 0; d < MUSE_LEARN_DOMAINS; d++) {
@@ -131,7 +134,10 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
         int r = (b->last_interaction_ms != 0 &&
                  now_ms - b->last_interaction_ms < 300000) ? 1 : 0;
         int ctx = (q << 3) | (m << 1) | r;
-        b->familiarity[ctx] += (1.0f - b->familiarity[ctx]) * 0.002f;
+        /* Familiarity is a learned model (the meta-model Q) — it learns
+         * at the precision-weighted rate of the interest drive. */
+        b->familiarity[ctx] += (1.0f - b->familiarity[ctx]) *
+            muse_brain_lr_eff_ch(b, 0.002f, MUSE_DRIVE_INTEREST);
         b->info_gain += (b->vta - b->info_gain) * (1.0f - MUSE_DECAY_MEDIUM);
         b->boredom = b->familiarity[ctx] * (1.0f - CLAMP01(b->info_gain));
         if (b->boredom > b->peak_boredom)
@@ -158,6 +164,30 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
      * κ-weighted vote, refreshed every tick for the snapshot and
      * the turn-gate middleware. */
     muse_brain_vote(b, NULL);
+
+    /* L5 precision budget (Grimbly): the fixed budget K is reallocated
+     * every tick to the most-depleted drive — argmax over expected
+     * need (the appraisal devs, i.e. beliefs, not raw sensors). The
+     * attended drive's models learn faster; when sated the budget
+     * spreads uniform. The planner-pathway rule: this reaches the
+     * learning rates, not just perception. */
+    {
+        int att = -1;
+        float best = 0.05f;
+        for (int d = 0; d < MUSE_NDRIVES; d++) {
+            if (b->vote.drives[d].dev > best) {
+                best = b->vote.drives[d].dev;
+                att = d;
+            }
+        }
+        b->attended = att;
+        for (int d = 0; d < MUSE_NDRIVES; d++) {
+            b->precision[d] = (att < 0) ? MUSE_PRECISION_K / MUSE_NDRIVES :
+                              (d == att) ? MUSE_PRECISION_ATTENDED :
+                              (MUSE_PRECISION_K - MUSE_PRECISION_ATTENDED) /
+                              (MUSE_NDRIVES - 1);
+        }
+    }
 
     /* L3 Doya modulators (corrected mapping): DA = TD error = fast
      * valence — no new state, just its statistics. 5-HT = γ, NA = β
@@ -229,7 +259,8 @@ void muse_brain_feed_battery(muse_brain_state_t *b, float voltage_v,
      * how wrong the energy predictor was, and it drives vta. The
      * predictor itself learns at the valence-gated rate. */
     float err = fabsf(energy - b->pred_energy);
-    b->pred_energy += (energy - b->pred_energy) * muse_brain_lr_eff(b, 0.1f);
+    b->pred_energy += (energy - b->pred_energy) *
+                      muse_brain_lr_eff_ch(b, 0.1f, MUSE_DRIVE_HUNGER);
     b->vta = CLAMP01(b->vta * 0.85f + err * 0.9f);
     b->somatic.energy = energy;
     b->somatic.updated_ms = now_ms;
@@ -243,7 +274,7 @@ void muse_brain_feed_motion(muse_brain_state_t *b, float agitation_01,
     agitation_01 = CLAMP01(agitation_01);
     float err = fabsf(agitation_01 - b->pred_tension);
     b->pred_tension += (agitation_01 - b->pred_tension) *
-                       muse_brain_lr_eff(b, 0.1f);
+                       muse_brain_lr_eff_ch(b, 0.1f, MUSE_DRIVE_TENSION);
     b->vta = CLAMP01(b->vta * 0.85f + err * 0.9f);
     b->somatic.tension = CLAMP01(b->somatic.tension * 0.7f + agitation_01 * 0.3f);
     b->somatic.arousal = CLAMP01(b->somatic.arousal + agitation_01 * 0.2f);
@@ -373,6 +404,17 @@ static const char *action_name(muse_action_t a)
     }
 }
 
+static const char *drive_name(int d)
+{
+    switch (d) {
+    case MUSE_DRIVE_HUNGER:  return "hunger";
+    case MUSE_DRIVE_FATIGUE: return "fatigue";
+    case MUSE_DRIVE_TENSION: return "tension";
+    case MUSE_DRIVE_INTEREST: return "interest";
+    default:                 return "none";
+    }
+}
+
 const char *muse_emotion_name(muse_emotion_t e)
 {
     switch (e) {
@@ -397,6 +439,15 @@ float muse_brain_lr_eff(const muse_brain_state_t *b, float base_lr)
     if (m < 0.2f) m = 0.2f;
     if (m > 4.0f) m = 4.0f;
     return base_lr * a_norm * m;
+}
+
+float muse_brain_lr_eff_ch(const muse_brain_state_t *b, float base_lr,
+                           int drive_id)
+{
+    float lr = muse_brain_lr_eff(b, base_lr);
+    if (drive_id >= 0 && drive_id < MUSE_NDRIVES)
+        lr *= b->precision[drive_id] / (MUSE_PRECISION_K / MUSE_NDRIVES);
+    return lr;
 }
 
 void muse_brain_feed_learning(muse_brain_state_t *b, int domain,
@@ -636,7 +687,7 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
     int n = snprintf(out, out_n,
         "{\"self\":\"%.31s\",\"gen\":%lu,\"stage\":%lu,"
         "\"energy\":%.2f,\"tension\":%.2f,\"arousal\":%.2f,\"valence\":%.2f,"
-        "\"emotion\":\"%s\",\"boredom\":%.2f,\"vote\":\"%s\","
+        "\"emotion\":\"%s\",\"boredom\":%.2f,\"vote\":\"%s\",\"attend\":\"%s\","
         "\"gamma\":%.2f,\"alpha\":%.2f,"
         "\"mood\":%.2f,\"drive\":%.2f,\"reward\":%.2f,\"need\":\"%s\","
         "\"fatigue\":%.2f,\"quiet\":%s,\"phase\":%.2f,"
@@ -652,6 +703,7 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
         muse_emotion_name(b->emotion),
         (double)b->boredom,
         action_name(b->vote.vote),
+        drive_name(b->attended),
         (double)b->ht_gamma,
         (double)b->ach_alpha,
         b->somatic.stale ? -9.0 : (double)b->somatic.mood,

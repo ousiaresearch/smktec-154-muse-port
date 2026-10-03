@@ -56,6 +56,11 @@ extern "C" {
  * concave (risk-averse) reward — free from the geometry. */
 #define MUSE_DRIVE_M 2.0f
 #define MUSE_DRIVE_N 2.0f
+/* Precision budget (Grimbly et al.): fixed budget K reallocated each
+ * tick to the most-depleted drive. Attended channel κ_att = 0.90,
+ * the rest split K − κ_att. Uniform share = K/4. */
+#define MUSE_PRECISION_K 2.60f
+#define MUSE_PRECISION_ATTENDED 0.90f
 
 /* L2 valence (SYSTEMS.md): the emotion quadrant from Joffily &
  * Coricelli — sign(velocity of improvement) × sign(acceleration).
@@ -231,6 +236,11 @@ typedef struct {
     float da_flips;       /* EMA of δ sign-flip rate */
     float da_prev;        /* previous δ (flip detection) */
     muse_vote_t vote;     /* L4: appraisal frames + continuous vote */
+    /* L5 precision budget (Grimbly): per-drive share of the fixed
+     * attention budget K. The attended drive's models learn faster —
+     * attention IS learning-rate allocation. */
+    float precision[MUSE_NDRIVES];
+    int attended;         /* drive id holding the budget, or −1 if sated */
     /* Curiosity predictor (research intake: Pathak et al. 2017, firmware
      * scale): EMA predictors per channel; surprise = |prediction-error|. */
     float pred_energy;
@@ -300,9 +310,14 @@ muse_gate_verdict_t muse_resolve_verdict(muse_gate_verdict_t rules_v,
  * have changed. Positive valence (the model is succeeding) learns slow
  * and consolidates. Mood ω is the persistent offset. The Doya
  * acetylcholine signal α is the global plasticity knob both rates
- * hang off. Steps 7–8 multiply in the precision-share and
- * windowed-stress gates. */
+ * hang off. The windowed-stress gate multiplies in at step 8. */
 float muse_brain_lr_eff(const muse_brain_state_t *b, float base_lr);
+/* Precision-aware learning rate (Grimbly, SYSTEMS.md step 7):
+ * lr_eff_ch = lr_eff · (κ_d / κ_uniform). The attended drive's models
+ * learn ~1.4× faster; the unattended ~0.87×. drive_id is a
+ * muse_drive_id_t, or −1 for drive-agnostic learning. */
+float muse_brain_lr_eff_ch(const muse_brain_state_t *b, float base_lr,
+                           int drive_id);
 
 /* Learning-progress feed (Oudeyer): success 0..1 per domain. */
 void muse_brain_feed_learning(muse_brain_state_t *b, int domain,

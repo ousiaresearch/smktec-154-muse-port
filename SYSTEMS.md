@@ -283,7 +283,14 @@ keep them separate channels.
    middleware — rule VETO never softens, the vote can urge caution or
    soften an advisory CAUTION when eager (boredom-driven), and never
    vetoes alone. The 26 rules are untouched. 81/81 host checks green.
-7. **Precision budget** attention reallocation.
+7. **Precision budget** attention reallocation — DONE 2026-10-03.
+   Fixed budget K=2.60 reallocated per tick to the most-depleted drive
+   (argmax over appraisal devs); attended gets κ=0.90, the rest split
+   the remainder; sated → uniform. `muse_brain_lr_eff_ch()` multiplies
+   the Joffily law by κ_d/κ_uniform (1.39× attended, 0.87× otherwise)
+   for the drive-model learners (energy/tension predictors,
+   familiarity). The windowed-stress gate lands in step 8. 90/90 host
+   checks green.
 8. **Dream pass as parameter rewrite** (needs the above first).
 9. **Social stubs** — `d^cpl`, partner precision (activate with counterparts).
 10. **Setpoint drift + sensor recentering** (slowest loops; last).

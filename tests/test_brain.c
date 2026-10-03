@@ -444,6 +444,47 @@ int main(void)
           strstr(snap20, "\"vote\":\"proceed\"") != NULL,
           "vote: snapshot reports it");
 
+    /* L5 precision budget (Grimbly, SYSTEMS.md step 7): a fixed budget
+     * reallocated to the most-depleted drive; attention IS
+     * learning-rate allocation. */
+    muse_brain_state_t b25;
+    muse_brain_init(&b25, cap_log);
+    muse_brain_tick(&b25, 2000, false);
+    CHECK(b25.attended == -1, "precision: sated brain spreads the budget");
+    CHECK(fabsf(b25.precision[0] - 0.65f) < 1e-6f,
+          "precision: uniform share is K/4");
+    b25.fatigue.level = 0.95f; b25.fatigue.stale = false;
+    b25.fatigue.updated_ms = 3000;
+    muse_brain_tick(&b25, 4000, false);
+    CHECK(b25.attended == MUSE_DRIVE_FATIGUE,
+          "precision: most-depleted drive wins the budget");
+    CHECK(fabsf(b25.precision[MUSE_DRIVE_FATIGUE] - 0.90f) < 1e-6f,
+          "precision: attended channel gets kappa_att");
+    CHECK(fabsf(b25.precision[MUSE_DRIVE_HUNGER] - (2.60f - 0.90f) / 3) < 1e-4f,
+          "precision: the rest split the remainder");
+    /* The attended channel's model learns faster. */
+    muse_brain_state_t b26a, b26b;
+    muse_brain_init(&b26a, cap_log);
+    muse_brain_init(&b26b, cap_log);
+    muse_brain_feed_battery(&b26a, 3.2f, false, 1000);  /* hunger 0.63 */
+    b26b.somatic.stale = false; b26b.somatic.updated_ms = 1000;
+    b26b.somatic.energy = 0.8f;                         /* hunger 0 */
+    b26b.somatic.tension = 0.9f;                         /* tense 0.7 */
+    muse_brain_tick(&b26a, 2000, false);   /* hunger attended */
+    muse_brain_tick(&b26b, 2000, false);   /* tension attended */
+    CHECK(b26a.attended == MUSE_DRIVE_HUNGER, "precision: hunger attended");
+    CHECK(b26b.attended == MUSE_DRIVE_TENSION, "precision: tension attended");
+    /* Equalize the predictors so only the learning rate differs. */
+    b26a.pred_energy = b26b.pred_energy = 0.5f;
+    muse_brain_feed_battery(&b26a, 4.0f, false, 3000);
+    muse_brain_feed_battery(&b26b, 4.0f, false, 3000);
+    CHECK(b26a.pred_energy > b26b.pred_energy + 0.005f,
+          "precision: attended channel's model learns faster");
+    char snap25[1152];
+    CHECK(muse_brain_snapshot(&b26a, NULL, snap25, sizeof(snap25)) > 0 &&
+          strstr(snap25, "\"attend\":\"hunger\"") != NULL,
+          "precision: snapshot reports attention");
+
     printf(failures ? "\n%d FAILURES\n" : "\nall brain tests passed\n", failures);
     return failures != 0;
 }
