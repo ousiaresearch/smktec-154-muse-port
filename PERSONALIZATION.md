@@ -76,13 +76,25 @@ reset-every-boot assistant.
   Anduril from family members. This gives the `tom` subsystem real input
   instead of cloud inference — the creature *knows who is talking to it*,
   locally, with no audio leaving the house.
-- **Personal wake word:** train "Lapis" as the wake word (custom KWS
-  pipelines exist for the S3; the MARVIN project is the reference
-  pattern). It answers to its name — the cheapest deep personalization
-  there is.
+- **The name, without a wake word (corrected 2026-10-03):** this SDK's
+  voice pipeline is **push-to-talk** (`muse_voice.h`: hold → stream to
+  Hatch → release → think → speak). There is no KWS/wake-word pipeline in
+  the SDK — no wakenet, no ESP-SR. An always-listening "Lapis" would mean
+  building that pipeline ourselves (major work + power cost; deferred).
+  Instead the name lives in the NVS identity, in the voice persona, and
+  in the call gesture: the PWR button *is* summoning Lapis. The PLUS
+  button is unassigned and could become a second call shortcut.
 - **Museria link (future):** the gadget as a physical avatar. A sigil or
   identity claim could live in NVS/SD, letting the embodied muse carry
   its agent-world identity into the physical room.
+- **Untouched SDK surface (audited 2026-10-03):** the menu/settings UI
+  system (`muse_menu.h`, `muse_settings_ui.h` — LVGL pages; the vitals
+  body-map and diary reader belong here), the voice turn loop
+  (`muse_voice.h` — this is where the gate middleware hooks, gating a
+  turn before it streams), and the chat/Link path (`muse_chat*`,
+  `muse_link.h` — brain-state → turn context, the firmware half of the
+  return-line idea). Correction: there is no skills catalog in this SDK;
+  menu pages + the chat path are the extension surfaces.
 
 ## 3. On-device learning — the creature adapts [v1]
 
@@ -155,7 +167,9 @@ organs on *remote* bodies too — `body_id/organ/sensor` addressing.
 ## What to build first — v1, bare board only
 
 1. Instance identity in NVS — name, owner, birth timestamp. First boot.
-2. Personal wake word "Lapis" — it answers to its name.
+2. Name & call gesture — "Lapis" in identity + voice persona; PWR as the
+   summon (SDK is push-to-talk, no KWS pipeline; always-listening wake
+   word deferred as a future ESP-SR project).
 3. Sleep consolidation + dream report — needs the dedicated microSD.
 4. "Remember this" memory prosthetic — verbatim capture, cued recall.
 5. Speaker-ID for household members — the creature knows who is talking.

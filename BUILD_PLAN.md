@@ -76,7 +76,7 @@ creature. Spec: `PERSONALIZATION.md`.
 | 2 | Decision gate as middleware (26 rules, PROCEED/CAUTION/VETO + reason) | `muse_gate.c` | done, host-tested 16/16, 10/10 parity vs Python |
 | 3 | Sleep consolidation + dream report | `muse_brain.c` + SD diary | brain scaffold done + host-tested; SD sink wires in board file |
 | 4 | "Remember this" memory prosthetic | `muse_brain.c` + voice cmd | brain scaffold done; voice cmd after bring-up |
-| 5 | Personal wake word "Lapis" | ESP-SR / KWS pipeline | after bring-up (needs mics) |
+| 5 | Name & call gesture | identity + PWR branding | SDK is push-to-talk (no KWS); always-listening wake word deferred |
 | 6 | Speaker-ID (household members) | on-device audio classifier | after wake word works |
 | 7 | Adaptive thresholds from the diary | `muse_brain.c` | after consolidation lands |
 | 8 | Gesture personalization (IMU) | `muse_imu.c` extension | after bring-up |

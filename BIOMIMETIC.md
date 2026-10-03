@@ -76,7 +76,11 @@ Phase-1 basket (items 1–3): **≈ $5** and three subsystems get measurably dee
 **Software plugins:**
 
 - **Hermes plugin `lapis-embodiment`** — syncs `brain-state.json` ↔ gadget over the tunnel; runs the consolidation pass cloud-side where inference is cheap; hosts ofc/predictive/prefrontal/tom modeling and feeds results back to the face. This is what lifts the ○-shallow cognitive subsystems without new hardware.
-- **Tunnel skills** (following the SDK's `skills/` catalog pattern): `gadget-brain-state` (GET /brain → live state over LAN), `gadget-diary` (GET /diary → today's entries). Lets Muse — and Anduril's Mac — read the creature.
+- **Menu pages + chat path** (corrected 2026-10-03 — there is no skills
+  catalog in the Gadgets SDK; the extension surfaces are LVGL menu pages
+  and the Link/chat path): a vitals body-map page (every subsystem's
+  live reading), a diary-reader page, and brain-state → turn context
+  injection (the firmware half of the return-line idea).
 - **Mac-side zeitgeber daemon** (optional, later): pushes phone-like context (location, calendar load) over LAN to supplement scn/hypothalamus. Needs a small companion service; rank below the plugin.
 
 **What stays shallow, and why that's correct:** prefrontal, tom, values, ofc remain ○ on-device by nature — they are cortical, not somatic. In biology the cortex also doesn't live in the fingertips. The honest architecture is: body on the gadget, cortex in the cloud, face showing both.
