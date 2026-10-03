@@ -167,6 +167,7 @@ static esp_err_t init(void)
     muse_diary_init();
     muse_brain_init(&s_brain, muse_diary_append);
     muse_brain_learning_restore(&s_brain, &s_identity);  /* capability baseline */
+    muse_brain_sleep_restore(&s_brain, &s_identity);     /* mood ω + familiarity Q */
     muse_turn_gate_attach(&s_brain, &s_identity);       /* PTT middleware */
     s_brain_ready = true;
     return adc_err;

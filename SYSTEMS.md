@@ -291,7 +291,14 @@ keep them separate channels.
    for the drive-model learners (energy/tension predictors,
    familiarity). The windowed-stress gate lands in step 8. 90/90 host
    checks green.
-8. **Dream pass as parameter rewrite** (needs the above first).
+8. **Dream pass as parameter rewrite** — DONE 2026-10-03. The TAME
+   windowed-stress gate (inverted-U over drive, 0.15 floor) multiplies
+   into the learning law; consolidate() enters low-ACh retrieve mode
+   (Hasselmo), assimilates the day's disclosures into the familiarity
+   meta-model Q scaled by the window, and persists ω (mood) + Q via
+   NVS (new identity fields, board restores on boot). info_gain resets
+   by design → the creature wakes up bored of yesterday's routines
+   (HHVG Q7). 99/99 host checks green.
 9. **Social stubs** — `d^cpl`, partner precision (activate with counterparts).
 10. **Setpoint drift + sensor recentering** (slowest loops; last).
 

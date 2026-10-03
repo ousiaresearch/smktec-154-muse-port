@@ -323,6 +323,20 @@ float muse_brain_lr_eff_ch(const muse_brain_state_t *b, float base_lr,
 void muse_brain_feed_learning(muse_brain_state_t *b, int domain,
                               float success01, uint32_t now_ms);
 
+/* Windowed stress gate (TAME, SYSTEMS.md step 8): stress (total drive)
+ * is instructive only in a concentration window — inverted-U, not a
+ * threshold. Returns 0.15..1.0; multiplies into the learning law, so
+ * saturated (crisis) or absent drive barely rewires anything. */
+float muse_brain_stress_window(const muse_brain_state_t *b);
+
+/* Sleep persistence (SYSTEMS.md step 8: parameters, not episodes).
+ * sleep_save runs inside consolidate(); the board calls sleep_restore
+ * after brain init (deep sleep wipes RAM between them). Persists ω
+ * (mood) and the familiarity meta-model Q. */
+void muse_brain_sleep_save(const muse_brain_state_t *b, muse_identity_t *id);
+void muse_brain_sleep_restore(muse_brain_state_t *b,
+                              const muse_identity_t *id);
+
 /* Persist/restore the slow learning EMAs across deep sleep. The board
  * calls restore after identity+brain init, and save runs inside
  * consolidate (persisted via muse_identity_save). Pure logic; the NVS

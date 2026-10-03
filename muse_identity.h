@@ -37,6 +37,10 @@ typedef struct {
     uint32_t care_days;   /* days with real interaction */
     uint32_t mastery;     /* learning-progress credits (Oudeyer) */
     float learn_base[MUSE_LEARN_DOMAINS]; /* persisted slow learning EMAs */
+    /* Sleep-persistent parameters (SYSTEMS.md step 8: what crosses sleep
+     * is parameters, not episodes): */
+    float mood;               /* ω: slow confidence offset (Hesp/Joffily) */
+    float familiarity[16];    /* the meta-model Q: what it already knows */
 } muse_identity_t;
 
 /*

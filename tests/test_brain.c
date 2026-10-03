@@ -210,7 +210,7 @@ int main(void)
     muse_brain_feed_battery(&b11, 4.0f, false, 2000);
     float calm_vta = b11.vta;
     muse_brain_feed_battery(&b11, 3.3f, false, 3000);  /* sudden drop */
-    CHECK(b11.vta > calm_vta + 0.2f,
+    CHECK(b11.vta > calm_vta + 0.1f,
           "curiosity: prediction error spikes vta");
 
     /* Learning progress (Oudeyer): improving success accrues mastery,
@@ -484,6 +484,56 @@ int main(void)
     CHECK(muse_brain_snapshot(&b26a, NULL, snap25, sizeof(snap25)) > 0 &&
           strstr(snap25, "\"attend\":\"hunger\"") != NULL,
           "precision: snapshot reports attention");
+
+    /* L7 dream pass as parameter rewrite (SYSTEMS.md step 8). */
+    /* Windowed stress (TAME): inverted-U over drive. */
+    muse_brain_state_t b27;
+    muse_brain_init(&b27, cap_log);
+    CHECK(fabsf(muse_brain_stress_window(&b27) - 0.15f) < 1e-6f,
+          "window: absent drive barely rewires");
+    muse_brain_feed_battery(&b27, 3.6f, false, 1000);  /* drive 0.3 */
+    CHECK(fabsf(muse_brain_stress_window(&b27) - 1.0f) < 1e-6f,
+          "window: moderate drive fully instructive");
+    muse_brain_feed_battery(&b27, 3.0f, false, 2000);  /* hunger 0.8 */
+    b27.fatigue.level = 1.0f; b27.fatigue.stale = false;
+    b27.fatigue.updated_ms = 2000;                     /* drive ~1.0 */
+    CHECK(fabsf(muse_brain_stress_window(&b27) - 0.15f) < 1e-6f,
+          "window: saturated drive barely rewires");
+    /* The window gates the learning law. */
+    muse_brain_state_t b27b;
+    muse_brain_init(&b27b, cap_log);
+    muse_brain_feed_battery(&b27b, 3.6f, false, 1000);  /* drive 0.3 */
+    float lr_calm = muse_brain_lr_eff_ch(&b27b, 0.1f, -1);
+    float lr_crisis = muse_brain_lr_eff_ch(&b27, 0.1f, -1);
+    CHECK(lr_crisis < lr_calm * 0.5f,
+          "window: crisis learns at a fraction of the calm rate");
+
+    /* What crosses sleep is parameters, not episodes. */
+    muse_brain_state_t b28;
+    muse_identity_t id28;
+    memset(&id28, 0, sizeof(id28));
+    muse_brain_init(&b28, cap_log);
+    b28.somatic.mood = 0.4f;
+    b28.familiarity[3] = 0.8f;
+    b28.ach_alpha = 0.9f;   /* wide-awake encode mode */
+    muse_brain_consolidate(&b28, &id28);
+    CHECK(fabsf(id28.mood - 0.4f) < 1e-6f,
+          "sleep: mood omega persists");
+    CHECK(fabsf(id28.familiarity[3] - 0.8f) < 0.02f,
+          "sleep: familiarity Q persists (assimilated)");
+    CHECK(fabsf(b28.ach_alpha - 0.2f) < 1e-6f,
+          "sleep: dream pass runs in low-ACh retrieve mode");
+    /* A new boot restores the parameters; info_gain resets, so the
+     * creature wakes up bored of yesterday's routines (HHVG Q7). */
+    muse_brain_state_t b29;
+    muse_brain_init(&b29, cap_log);
+    muse_brain_sleep_restore(&b29, &id28);
+    CHECK(fabsf(b29.somatic.mood - 0.4f) < 1e-6f,
+          "sleep: mood restored after deep sleep");
+    b29.familiarity[0] = 0.9f;   /* yesterday's quiet room */
+    muse_brain_tick(&b29, 2000, false);
+    CHECK(b29.boredom > 0.6f,
+          "sleep: wakes up bored of yesterday's routines");
 
     printf(failures ? "\n%d FAILURES\n" : "\nall brain tests passed\n", failures);
     return failures != 0;

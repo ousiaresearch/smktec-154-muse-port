@@ -65,6 +65,8 @@ static float raw_drive(const muse_brain_state_t *b)
 
 /* Forward: the L4 vote refreshes every tick (defined below). */
 muse_action_t muse_brain_vote(muse_brain_state_t *b, float *margin_out);
+/* Forward: the TAME window gates the learning law (defined below). */
+float muse_brain_stress_window(const muse_brain_state_t *b);
 
 void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
 {
@@ -134,10 +136,14 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
         int r = (b->last_interaction_ms != 0 &&
                  now_ms - b->last_interaction_ms < 300000) ? 1 : 0;
         int ctx = (q << 3) | (m << 1) | r;
-        /* Familiarity is a learned model (the meta-model Q) — it learns
-         * at the precision-weighted rate of the interest drive. */
-        b->familiarity[ctx] += (1.0f - b->familiarity[ctx]) *
-            muse_brain_lr_eff_ch(b, 0.002f, MUSE_DRIVE_INTEREST);
+        /* Familiarity is exposure counting (the meta-model Q), not
+         * error-driven plasticity: it tracks exposure faithfully,
+         * gated only by the precision share (the attended context
+         * assimilates faster). The TAME window governs model updates,
+         * not the exposure counter. */
+        float pshare = b->precision[MUSE_DRIVE_INTEREST] /
+                       (MUSE_PRECISION_K / MUSE_NDRIVES);
+        b->familiarity[ctx] += (1.0f - b->familiarity[ctx]) * 0.002f * pshare;
         b->info_gain += (b->vta - b->info_gain) * (1.0f - MUSE_DECAY_MEDIUM);
         b->boredom = b->familiarity[ctx] * (1.0f - CLAMP01(b->info_gain));
         if (b->boredom > b->peak_boredom)
@@ -444,10 +450,46 @@ float muse_brain_lr_eff(const muse_brain_state_t *b, float base_lr)
 float muse_brain_lr_eff_ch(const muse_brain_state_t *b, float base_lr,
                            int drive_id)
 {
-    float lr = muse_brain_lr_eff(b, base_lr);
+    /* Full law (SYSTEMS.md): lr · exp(−k·v+ω) · window(stress) ·
+     * precision-share. The TAME window gates plasticity by drive. */
+    float lr = muse_brain_lr_eff(b, base_lr) * muse_brain_stress_window(b);
     if (drive_id >= 0 && drive_id < MUSE_NDRIVES)
         lr *= b->precision[drive_id] / (MUSE_PRECISION_K / MUSE_NDRIVES);
     return lr;
+}
+
+float muse_brain_stress_window(const muse_brain_state_t *b)
+{
+    /* Inverted-U (TAME/Levin): stress is instructive only in a
+     * concentration window. Too little deviation — nothing to learn;
+     * saturating deviation — noise, not signal (the loss-of-function
+     * finding: forced zero stress breaks regulation, so the floor is
+     * 0.15, never 0). Bounds are initial; tune against behavior. */
+    float d = raw_drive(b);
+    if (d < 0.05f) return 0.15f;
+    if (d < 0.20f) return 0.15f + 0.85f * (d - 0.05f) / 0.15f;
+    if (d < 0.65f) return 1.0f;
+    if (d < 0.90f) return 1.0f - 0.85f * (d - 0.65f) / 0.25f;
+    return 0.15f;
+}
+
+void muse_brain_sleep_save(const muse_brain_state_t *b, muse_identity_t *id)
+{
+    /* What crosses sleep is parameters, not episodes: ω and Q. */
+    id->mood = b->somatic.mood;
+    for (int i = 0; i < 16; i++)
+        id->familiarity[i] = b->familiarity[i];
+}
+
+void muse_brain_sleep_restore(muse_brain_state_t *b,
+                              const muse_identity_t *id)
+{
+    b->somatic.mood = id->mood;
+    for (int i = 0; i < 16; i++)
+        b->familiarity[i] = id->familiarity[i];
+    /* info_gain is RAM-only by design: it resets to 0, so morning
+     * boredom = familiarity × 1 — the creature wakes up bored of
+     * yesterday's routines (HHVG Q7), and seeks novelty. */
 }
 
 void muse_brain_feed_learning(muse_brain_state_t *b, int domain,
@@ -631,6 +673,18 @@ void muse_brain_consolidate(muse_brain_state_t *b, muse_identity_t *id)
         if (b->log)
             b->log(milestones[want]);
     }
+
+    /* The dream pass as parameter rewrite (SYSTEMS.md step 8).
+     * Hasselmo via Doya: consolidation runs in the low-ACh regime
+     * (retrieve mode), not the high-plasticity encode regime. */
+    b->ach_alpha = 0.2f;
+    /* Assimilate the day's disclosures into the meta-model Q, gated by
+     * the windowed stress signal (TAME): moderate deviation teaches,
+     * saturating deviation doesn't. What persists is parameters. */
+    float w = muse_brain_stress_window(b);
+    for (int i = 0; i < 16; i++)
+        b->familiarity[i] += (1.0f - b->familiarity[i]) * 0.1f * w;
+    muse_brain_sleep_save(b, id);
 
     /* The dream pass: fold the day's counters into one diary entry. */
     if (b->log) {
