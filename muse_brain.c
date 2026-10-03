@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #define CLAMP01(x) ((x) < 0.f ? 0.f : (x) > 1.f ? 1.f : (x))
 
@@ -18,6 +19,12 @@ void muse_brain_init(muse_brain_state_t *b, muse_brain_log_fn log)
     b->somatic.energy = 0.5f;
     b->somatic.arousal = 0.5f;
     b->lc.alertness = 0.5f;
+    b->pred_energy = 0.5f;
+    b->pred_tension = 0.0f;
+    for (int d = 0; d < MUSE_LEARN_DOMAINS; d++) {
+        b->learn_fast[d] = 0.5f;
+        b->learn_slow[d] = 0.5f;
+    }
     b->log = log;
     /* Subsystems start stale: the brain is honest about knowing nothing yet. */
     b->scn.stale = b->somatic.stale = b->fatigue.stale = true;
@@ -31,12 +38,16 @@ static bool aged(uint32_t updated_ms, uint32_t now_ms, uint32_t budget_ms)
 
 void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
 {
-    /* Decay fast signals toward rest. */
-    b->somatic.tension *= 0.95f;
-    b->somatic.arousal += (0.5f - b->somatic.arousal) * 0.05f;
-    b->lc.alertness += (0.5f - b->lc.alertness) * 0.05f;
-    b->novelty *= 0.98f;
-    b->vta *= 0.98f;
+    /* ALMA layers, three clocks. Fast signals move in seconds... */
+    b->somatic.tension *= MUSE_DECAY_FAST;
+    b->somatic.arousal += (0.5f - b->somatic.arousal) * (1.0f - MUSE_DECAY_FAST);
+    b->lc.alertness += (0.5f - b->lc.alertness) * (1.0f - MUSE_DECAY_FAST);
+    b->novelty *= MUSE_DECAY_FAST;
+    b->vta *= MUSE_DECAY_FAST;
+    /* ...valence decays over minutes, mood tracks it slower still. */
+    b->somatic.valence *= MUSE_DECAY_MEDIUM;
+    b->somatic.mood += (b->somatic.valence - b->somatic.mood) *
+                       (1.0f - MUSE_DECAY_SLOW);
 
     /* Fatigue: accrues with load while awake, recovers while asleep. */
     if (sleeping) {
@@ -66,9 +77,15 @@ void muse_brain_feed_battery(muse_brain_state_t *b, float voltage_v,
                              bool charging, uint32_t now_ms)
 {
     /* LiPo curve: 3.0V empty, 4.2V full. Charging reads as rising energy. */
-    b->somatic.energy = CLAMP01((voltage_v - 3.0f) / 1.2f);
+    float energy = CLAMP01((voltage_v - 3.0f) / 1.2f);
     if (charging)
-        b->somatic.energy = CLAMP01(b->somatic.energy + 0.05f);
+        energy = CLAMP01(energy + 0.05f);
+    /* Curiosity as prediction error (Pathak, firmware scale): surprise is
+     * how wrong the energy predictor was, and it drives vta. */
+    float err = fabsf(energy - b->pred_energy);
+    b->pred_energy += (energy - b->pred_energy) * 0.1f;
+    b->vta = CLAMP01(b->vta * 0.85f + err * 0.9f);
+    b->somatic.energy = energy;
     b->somatic.updated_ms = now_ms;
     b->somatic.stale = false;
     b->fatigue.updated_ms = now_ms;   /* energy informs fatigue honesty */
@@ -78,6 +95,9 @@ void muse_brain_feed_motion(muse_brain_state_t *b, float agitation_01,
                             uint32_t now_ms)
 {
     agitation_01 = CLAMP01(agitation_01);
+    float err = fabsf(agitation_01 - b->pred_tension);
+    b->pred_tension += (agitation_01 - b->pred_tension) * 0.1f;
+    b->vta = CLAMP01(b->vta * 0.85f + err * 0.9f);
     b->somatic.tension = CLAMP01(b->somatic.tension * 0.7f + agitation_01 * 0.3f);
     b->somatic.arousal = CLAMP01(b->somatic.arousal + agitation_01 * 0.2f);
     b->lc.alertness = CLAMP01(b->lc.alertness + agitation_01 * 0.25f);
@@ -86,6 +106,28 @@ void muse_brain_feed_motion(muse_brain_state_t *b, float agitation_01,
     b->lc.updated_ms = now_ms;
     b->lc.stale = false;
     b->dmn.rest_ms = 0;               /* motion ends rest */
+}
+
+void muse_brain_feed_valence(muse_brain_state_t *b, float delta,
+                             uint32_t now_ms)
+{
+    /* Event-driven valence (amy): pet +, error −. */
+    float v = b->somatic.valence + delta;
+    b->somatic.valence = v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v);
+    b->somatic.updated_ms = now_ms;
+    b->somatic.stale = false;
+}
+
+void muse_brain_feed_learning(muse_brain_state_t *b, int domain,
+                              float success01, uint32_t now_ms)
+{
+    /* Learning progress (Oudeyer): progress = fast EMA − slow EMA. */
+    if (domain < 0 || domain >= MUSE_LEARN_DOMAINS)
+        return;
+    (void)now_ms;
+    success01 = CLAMP01(success01);
+    b->learn_fast[domain] += (success01 - b->learn_fast[domain]) * 0.3f;
+    b->learn_slow[domain] += (success01 - b->learn_slow[domain]) * 0.05f;
 }
 
 void muse_brain_feed_interaction(muse_brain_state_t *b, uint32_t now_ms)
@@ -119,15 +161,62 @@ void muse_brain_set_quiet_hours(muse_brain_state_t *b, bool quiet,
     b->scn.stale = false;
 }
 
+float muse_brain_drive(const muse_brain_state_t *b, char *need_out,
+                       size_t need_n)
+{
+    /* Homeostatic drive (Keramati & Gutkin): deviation from setpoint.
+     * Stale subsystems contribute nothing — no invented needs. */
+    float hunger = 0, tired = 0, tense = 0;
+    if (!b->somatic.stale)
+        hunger = CLAMP01(MUSE_SETPOINT_ENERGY - b->somatic.energy);
+    if (!b->fatigue.stale)
+        tired = CLAMP01(b->fatigue.level - MUSE_SETPOINT_FATIGUE);
+    if (!b->somatic.stale)
+        tense = CLAMP01(b->somatic.tension - MUSE_SETPOINT_TENSION);
+
+    const char *need = "none";
+    float biggest = 0.0f;
+    if (hunger > biggest) { biggest = hunger; need = "hunger"; }
+    if (tired > biggest)  { biggest = tired;  need = "rest"; }
+    if (tense > biggest)  { biggest = tense;  need = "calm"; }
+
+    /* Euclidean magnitude of the deviation vector. */
+    float mag = sqrtf(hunger * hunger + tired * tired + tense * tense);
+    if (mag > 1.0f) mag = 1.0f;
+    if (need_out && need_n > 0) {
+        strncpy(need_out, biggest > 0.05f ? need : "none", need_n - 1);
+        need_out[need_n - 1] = '\0';
+    }
+    return mag;
+}
+
 muse_gut_t muse_brain_suggest_gut(const muse_brain_state_t *b)
 {
-    /* v1 heuristic. The cloud (lapis-embodiment plugin) refines this later;
-     * on-device it just has to be honest and simple. */
-    if (!b->somatic.stale && b->somatic.energy < 0.35f)
-        return MUSE_GUT_PAUSE;
-    if (!b->somatic.stale && b->somatic.valence < -0.6f)
+    /* Appraisal in Scherer's sequential-check order (EMA lineage):
+     * 1. suddenness/novelty, 2. intrinsic pleasantness,
+     * 3. goal conduciveness, 4. coping potential. */
+    const bool stale = b->somatic.stale;
+    const float energy  = stale ? 0.5f : b->somatic.energy;
+    const float valence = stale ? 0.0f : b->somatic.valence;
+    const float tension = stale ? 0.0f : b->somatic.tension;
+    const float fatigue = b->fatigue.stale ? 0.0f : b->fatigue.level;
+    const float surprise = b->vta;
+
+    /* 1. Suddenness: high surprise with low coping -> orient, don't act. */
+    if (surprise > 0.7f && fatigue > 0.5f)
+        return MUSE_GUT_WAIT;
+    /* 2. Intrinsic pleasantness: deeply bad + no resources -> stop. */
+    if (valence < -0.8f && energy < 0.25f)
+        return MUSE_GUT_STOP;
+    if (valence < -0.6f)
         return MUSE_GUT_DOUBT;
-    if (!b->somatic.stale && b->somatic.tension > 0.8f)
+    /* 3. Goal conduciveness: a critical need comes before anything else. */
+    if (energy < 0.35f)
+        return MUSE_GUT_PAUSE;
+    /* 4. Coping potential: can I handle this right now? */
+    if (fatigue > 0.7f)
+        return MUSE_GUT_PAUSE;
+    if (tension > 0.8f)
         return MUSE_GUT_WAIT;
     return MUSE_GUT_GO_AHEAD;
 }
@@ -151,12 +240,40 @@ void muse_brain_gate_inputs(const muse_brain_state_t *b, float adj_confidence,
     out->drive = out->recovery_needed ? "recovery" : NULL;
 }
 
+void muse_brain_learning_save(const muse_brain_state_t *b, muse_identity_t *id)
+{
+    for (int d = 0; d < MUSE_LEARN_DOMAINS; d++)
+        id->learn_base[d] = b->learn_slow[d];
+}
+
+void muse_brain_learning_restore(muse_brain_state_t *b,
+                                 const muse_identity_t *id)
+{
+    for (int d = 0; d < MUSE_LEARN_DOMAINS; d++) {
+        b->learn_fast[d] = id->learn_base[d];
+        b->learn_slow[d] = id->learn_base[d];
+    }
+}
+
 void muse_brain_consolidate(muse_brain_state_t *b, muse_identity_t *id)
 {
     /* Care-day: a day with real interaction. Missed days don't punish;
      * they just don't advance. The window is not the door. */
     if (b->interactions >= MUSE_CARE_DAY_INTERACTIONS)
         id->care_days++;
+
+    /* Learning progress (Oudeyer 2007): sustained improvement earns
+     * mastery credits, which count (capped) toward growth alongside
+     * care-days. Development follows mastery, not just attendance. */
+    float lp = 0.0f;
+    for (int d = 0; d < MUSE_LEARN_DOMAINS; d++) {
+        float p = b->learn_fast[d] - b->learn_slow[d];
+        if (p > 0.0f) lp += p;
+    }
+    if (lp > 0.3f && id->mastery < 4) {
+        id->mastery++;
+        if (b->log) b->log("mastery: sustained learning progress");
+    }
 
     /* Growth: the child earns stages, never buys them. */
     static const uint32_t marks[MUSE_GROWTH_STAGES] = { 0, 2, 5, 12 };
@@ -166,9 +283,10 @@ void muse_brain_consolidate(muse_brain_state_t *b, muse_identity_t *id)
         "growth: stage 2 (child) — it asks why now",
         "growth: stage 3 (adolescent) — it has opinions about itself",
     };
+    uint32_t effective = id->care_days + (id->mastery > 2 ? 2 : id->mastery);
     uint32_t want = 0;
     for (uint32_t s = 1; s < MUSE_GROWTH_STAGES; s++)
-        if (id->care_days >= marks[s])
+        if (effective >= marks[s])
             want = s;
     if (want > id->growth_stage) {
         id->growth_stage = want;
@@ -192,6 +310,9 @@ void muse_brain_consolidate(muse_brain_state_t *b, muse_identity_t *id)
         b->log(line);
     }
     b->hippocampus.entries++;
+    /* The capability baseline ratchets: tomorrow's progress is measured
+     * against what the child can already do. */
+    muse_brain_learning_save(b, id);
     /* Reset the day counters; the diary keeps what happened. */
     b->interactions = 0;
     b->veto_count = 0;
@@ -221,9 +342,12 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
 
     /* Compact JSON. Stale subsystems report -1 ("don't know"), never a
      * fabricated reading; the stale list names them explicitly. */
+    char need[16];
+    float drive = muse_brain_drive(b, need, sizeof(need));
     int n = snprintf(out, out_n,
         "{\"self\":\"%.31s\",\"gen\":%lu,\"stage\":%lu,"
         "\"energy\":%.2f,\"tension\":%.2f,\"arousal\":%.2f,\"valence\":%.2f,"
+        "\"mood\":%.2f,\"drive\":%.2f,\"need\":\"%s\","
         "\"fatigue\":%.2f,\"quiet\":%s,\"phase\":%.2f,"
         "\"gate\":\"%s\",\"gate_why\":\"%s\","
         "\"interactions\":%lu,\"stale\":[%s]}",
@@ -234,6 +358,8 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
         b->somatic.stale ? -1.0 : (double)b->somatic.tension,
         b->lc.stale ? -1.0 : (double)b->lc.alertness,
         b->somatic.stale ? -9.0 : (double)b->somatic.valence,
+        b->somatic.stale ? -9.0 : (double)b->somatic.mood,
+        (double)drive, need,
         b->fatigue.stale ? -1.0 : (double)b->fatigue.level,
         (!b->scn.stale && b->scn.quiet_hours) ? "true" : "false",
         b->scn.stale ? -1.0 : (double)b->scn.phase,

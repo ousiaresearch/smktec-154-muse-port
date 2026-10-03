@@ -13,6 +13,11 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
+
+/* Learning domains (Oudeyer): 0 = gesture confidence, 1 = voice-turn
+ * success. Defined here because the baseline is persisted with identity. */
+#define MUSE_LEARN_DOMAINS 2
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,6 +35,8 @@ typedef struct {
     uint32_t seed;        /* minted once; survives factory reset */
     uint32_t growth_stage;/* 0..3 — see GROWTH.md */
     uint32_t care_days;   /* days with real interaction */
+    uint32_t mastery;     /* learning-progress credits (Oudeyer) */
+    float learn_base[MUSE_LEARN_DOMAINS]; /* persisted slow learning EMAs */
 } muse_identity_t;
 
 /*

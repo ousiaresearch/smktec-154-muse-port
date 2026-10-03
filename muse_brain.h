@@ -37,6 +37,19 @@ extern "C" {
 #define MUSE_DMN_STALE_MS        (5u * 60u * 1000u)
 #define MUSE_HIPPOCAMPUS_STALE_MS (24u * 3600u * 1000u)
 
+/* ALMA timescales (research intake): affect runs on three clocks.
+ * Fast (seconds): arousal, tension, alertness, surprise. Medium
+ * (minutes–hours): mood. Slow (days): traits, growth stage. */
+#define MUSE_DECAY_FAST   0.90f   /* per 2s tick */
+#define MUSE_DECAY_MEDIUM 0.99f   /* per 2s tick */
+#define MUSE_DECAY_SLOW   0.995f  /* per 2s tick */
+
+/* Homeostatic setpoints (research intake: Keramati & Gutkin 2014).
+ * Drive = distance from setpoint; the creature wants things. */
+#define MUSE_SETPOINT_ENERGY  0.80f
+#define MUSE_SETPOINT_FATIGUE 0.15f
+#define MUSE_SETPOINT_TENSION 0.20f
+
 typedef struct {
     float phase;          /* 0..1 circadian phase */
     bool quiet_hours;     /* 23:00–05:30 local, or entrained */
@@ -47,8 +60,9 @@ typedef struct {
 typedef struct {
     float energy;         /* 0..1 — battery-derived */
     float tension;        /* 0..1 — IMU agitation-derived */
-    float arousal;        /* 0..1 */
-    float valence;        /* -1..1 */
+    float arousal;        /* 0..1, fast layer */
+    float valence;        /* -1..1, fast layer */
+    float mood;           /* -1..1, medium layer: slow EMA of valence (ALMA) */
     uint32_t updated_ms;
     bool stale;
 } muse_somatic_t;
@@ -99,8 +113,19 @@ typedef struct {
     muse_decisions_t decisions;
     /* Ephemeral (not subsystems, but the gate needs them): */
     float novelty;        /* 0..1 recent novelty rate */
-    float vta;            /* 0..1 dopamine drive */
+    float vta;            /* 0..1 dopamine drive: prediction-error surprise */
     bool distracted;
+    /* Curiosity predictor (research intake: Pathak et al. 2017, firmware
+     * scale): EMA predictors per channel; surprise = |prediction-error|. */
+    float pred_energy;
+    float pred_tension;
+    /* Learning progress (Oudeyer 2007): per-domain fast/slow EMAs of
+     * success; progress = fast − slow. The slow EMA is persisted as
+     * learn_base so progress survives deep sleep
+     * (muse_brain_learning_save/restore). MUSE_LEARN_DOMAINS lives in
+     * muse_identity.h, which persists the baseline. */
+    float learn_fast[MUSE_LEARN_DOMAINS];
+    float learn_slow[MUSE_LEARN_DOMAINS];
     /* Day counters for the dream pass: */
     uint32_t interactions;
     uint32_t veto_count;
@@ -131,7 +156,31 @@ void muse_brain_note_novelty(muse_brain_state_t *b, uint32_t now_ms);
 void muse_brain_set_quiet_hours(muse_brain_state_t *b, bool quiet,
                                 float phase, uint32_t now_ms);
 
-/* v1 heuristic gut feeling from somatic state; the cloud refines it later. */
+/* Event-driven valence (amy): pet +, error −. Decays in tick. */
+void muse_brain_feed_valence(muse_brain_state_t *b, float delta,
+                             uint32_t now_ms);
+
+/* Learning-progress feed (Oudeyer): success 0..1 per domain. */
+void muse_brain_feed_learning(muse_brain_state_t *b, int domain,
+                              float success01, uint32_t now_ms);
+
+/* Persist/restore the slow learning EMAs across deep sleep. The board
+ * calls restore after identity+brain init, and save runs inside
+ * consolidate (persisted via muse_identity_save). Pure logic; the NVS
+ * itself lives in the identity module. */
+void muse_brain_learning_save(const muse_brain_state_t *b, muse_identity_t *id);
+void muse_brain_learning_restore(muse_brain_state_t *b,
+                                 const muse_identity_t *id);
+
+/* Homeostatic drive (Keramati & Gutkin): 0..1 magnitude of need, plus the
+ * dominant need name ("hunger"/"rest"/"calm"/"none"). Stale subsystems
+ * don't contribute — the creature doesn't invent needs. */
+float muse_brain_drive(const muse_brain_state_t *b, char *need_out,
+                       size_t need_n);
+
+/* Appraisal-based gut (research intake: EMA/Scherer sequential checking):
+ * novelty → pleasantness → goal conduciveness → coping potential.
+ * The cloud refines it later; on-device it just has to be honest. */
 muse_gut_t muse_brain_suggest_gut(const muse_brain_state_t *b);
 
 /* Fill gate inputs from brain state (neutral defaults for stale). */

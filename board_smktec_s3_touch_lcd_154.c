@@ -144,6 +144,7 @@ static esp_err_t init(void)
         ESP_LOGW(TAG, "identity unavailable — the self is unknown this boot");
     muse_diary_init();
     muse_brain_init(&s_brain, muse_diary_append);
+    muse_brain_learning_restore(&s_brain, &s_identity);  /* capability baseline */
     s_brain_ready = true;
     return adc_err;
 }

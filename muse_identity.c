@@ -60,6 +60,9 @@ int muse_identity_init(muse_identity_t *id)
         nvs_set_u32(h, "seed", id->seed);
         nvs_set_u32(h, "growth_stage", 0);
         nvs_set_u32(h, "care_days", 0);
+        nvs_set_u32(h, "mastery", 0);
+        float zero[MUSE_LEARN_DOMAINS] = { 0.5f, 0.5f };
+        nvs_set_blob(h, "learn_base", zero, sizeof(zero));
         ESP_LOGI(TAG, "minted identity: %s, generation %lu", id->name,
                  (unsigned long)id->generation);
     } else {
@@ -71,6 +74,11 @@ int muse_identity_init(muse_identity_t *id)
         nvs_get_u32(h, "seed", &id->seed);
         nvs_get_u32(h, "growth_stage", &id->growth_stage);
         nvs_get_u32(h, "care_days", &id->care_days);
+        nvs_get_u32(h, "mastery", &id->mastery);
+        size_t blen = sizeof(id->learn_base);
+        if (nvs_get_blob(h, "learn_base", id->learn_base, &blen) != ESP_OK) {
+            id->learn_base[0] = id->learn_base[1] = 0.5f;
+        }
     }
 
     id->boot_count++;
@@ -111,6 +119,8 @@ int muse_identity_save(const muse_identity_t *id)
         return err;
     nvs_set_u32(h, "growth_stage", id->growth_stage);
     nvs_set_u32(h, "care_days", id->care_days);
+    nvs_set_u32(h, "mastery", id->mastery);
+    nvs_set_blob(h, "learn_base", id->learn_base, sizeof(id->learn_base));
     nvs_set_u32(h, "seed", id->seed);
     err = nvs_commit(h);
     nvs_close(h);
