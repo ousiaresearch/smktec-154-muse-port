@@ -252,7 +252,11 @@ keep them separate channels.
    channel (the future social-coupling stub — pet/error are d^other
    inputs, not valence assignments). Snapshot carries `"emotion"`.
    38/38 host checks green.
-2. **Joffily learning-rate law** — apply to learning EMAs + consolidation.
+2. **Joffily learning-rate law** — DONE 2026-10-03.
+   `muse_brain_lr_eff(b, base) = base · exp(−k·v + ω)`, clamped
+   [0.2×, 4×]. Applied to all four learning EMAs (two curiosity
+   predictors, fast/slow learning progress). Precision-share and the
+   TAME window multiply in at steps 7–8. 43/43 host checks green.
 3. **Boredom drive** — familiarity/info-gain EMAs; wire to NA temperature.
 4. **Doya modulators** — four scalars + interaction rules (correct mapping).
 5. **Minkowski drive + `r` signal** — parameterize existing drive.

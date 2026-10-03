@@ -71,6 +71,9 @@ const char *muse_emotion_name(muse_emotion_t e);
 #define MUSE_VALENCE_GAIN 10.0f
 /* Below this |v|, the creature is calm — no emotion named. */
 #define MUSE_EMO_DEADBAND 0.05f
+/* Joffily lr_eff = lr · exp(−k·v + ω): sensitivity of learning to
+ * valence. k=1 gives e^1 ≈ 2.7× faster learning at v=−1. */
+#define MUSE_LR_VALENCE_K 1.0f
 
 typedef struct {
     float phase;          /* 0..1 circadian phase */
@@ -197,6 +200,15 @@ void muse_brain_set_quiet_hours(muse_brain_state_t *b, bool quiet,
  * over minutes. What the creature "feels" is drive change plus pulse. */
 void muse_brain_feed_valence(muse_brain_state_t *b, float delta,
                              uint32_t now_ms);
+
+/* Learning-rate law (Joffily & Coricelli eq. 4, SYSTEMS.md step 2):
+ * lr_eff = lr · exp(−k·v + ω), clamped to [0.2×, 4×].
+ * Negative valence (the model is failing) learns fast — the world may
+ * have changed. Positive valence (the model is succeeding) learns slow
+ * and consolidates. Mood ω is the persistent offset: a creature in a
+ * good mood is harder to teach, in a bad mood easier.
+ * Steps 7–8 multiply in the precision-share and windowed-stress gates. */
+float muse_brain_lr_eff(const muse_brain_state_t *b, float base_lr);
 
 /* Learning-progress feed (Oudeyer): success 0..1 per domain. */
 void muse_brain_feed_learning(muse_brain_state_t *b, int domain,

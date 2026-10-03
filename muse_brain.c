@@ -144,9 +144,10 @@ void muse_brain_feed_battery(muse_brain_state_t *b, float voltage_v,
     if (charging)
         energy = CLAMP01(energy + 0.05f);
     /* Curiosity as prediction error (Pathak, firmware scale): surprise is
-     * how wrong the energy predictor was, and it drives vta. */
+     * how wrong the energy predictor was, and it drives vta. The
+     * predictor itself learns at the valence-gated rate. */
     float err = fabsf(energy - b->pred_energy);
-    b->pred_energy += (energy - b->pred_energy) * 0.1f;
+    b->pred_energy += (energy - b->pred_energy) * muse_brain_lr_eff(b, 0.1f);
     b->vta = CLAMP01(b->vta * 0.85f + err * 0.9f);
     b->somatic.energy = energy;
     b->somatic.updated_ms = now_ms;
@@ -159,7 +160,8 @@ void muse_brain_feed_motion(muse_brain_state_t *b, float agitation_01,
 {
     agitation_01 = CLAMP01(agitation_01);
     float err = fabsf(agitation_01 - b->pred_tension);
-    b->pred_tension += (agitation_01 - b->pred_tension) * 0.1f;
+    b->pred_tension += (agitation_01 - b->pred_tension) *
+                       muse_brain_lr_eff(b, 0.1f);
     b->vta = CLAMP01(b->vta * 0.85f + err * 0.9f);
     b->somatic.tension = CLAMP01(b->somatic.tension * 0.7f + agitation_01 * 0.3f);
     b->somatic.arousal = CLAMP01(b->somatic.arousal + agitation_01 * 0.2f);
@@ -197,16 +199,29 @@ const char *muse_emotion_name(muse_emotion_t e)
     }
 }
 
+float muse_brain_lr_eff(const muse_brain_state_t *b, float base_lr)
+{
+    float m = expf(-MUSE_LR_VALENCE_K * b->somatic.valence +
+                   b->somatic.mood);
+    if (m < 0.2f) m = 0.2f;
+    if (m > 4.0f) m = 4.0f;
+    return base_lr * m;
+}
+
 void muse_brain_feed_learning(muse_brain_state_t *b, int domain,
                               float success01, uint32_t now_ms)
 {
-    /* Learning progress (Oudeyer): progress = fast EMA − slow EMA. */
+    /* Learning progress (Oudeyer): progress = fast EMA − slow EMA.
+     * Both EMAs learn at the valence-gated rate — in a failing world
+     * even the baseline lets go faster. */
     if (domain < 0 || domain >= MUSE_LEARN_DOMAINS)
         return;
     (void)now_ms;
     success01 = CLAMP01(success01);
-    b->learn_fast[domain] += (success01 - b->learn_fast[domain]) * 0.3f;
-    b->learn_slow[domain] += (success01 - b->learn_slow[domain]) * 0.05f;
+    b->learn_fast[domain] += (success01 - b->learn_fast[domain]) *
+                             muse_brain_lr_eff(b, 0.3f);
+    b->learn_slow[domain] += (success01 - b->learn_slow[domain]) *
+                             muse_brain_lr_eff(b, 0.05f);
 }
 
 void muse_brain_feed_interaction(muse_brain_state_t *b, uint32_t now_ms)

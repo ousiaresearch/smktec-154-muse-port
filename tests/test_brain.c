@@ -1,6 +1,7 @@
 /* Host unit test for muse_brain.c (+ muse_gate.c). */
 #include "muse_brain.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -234,6 +235,42 @@ int main(void)
     CHECK(id12.mastery > 0, "learning: sustained progress earns mastery");
     CHECK(id12.learn_base[0] > 0.5f,
           "learning: capability baseline ratchets up");
+
+    /* Joffily learning-rate law (SYSTEMS.md step 2):
+     * lr_eff = lr · exp(−k·v + ω), clamped [0.2×, 4×]. */
+    muse_brain_state_t b13;
+    muse_brain_init(&b13, cap_log);
+    b13.somatic.valence = -1.0f; b13.somatic.mood = 0.0f;
+    CHECK(muse_brain_lr_eff(&b13, 0.1f) > 0.27f,
+          "lr: negative valence learns ~2.7x faster");
+    b13.somatic.valence = 1.0f;
+    CHECK(muse_brain_lr_eff(&b13, 0.1f) < 0.04f,
+          "lr: positive valence learns ~2.7x slower");
+    b13.somatic.valence = 0.0f; b13.somatic.mood = 0.5f;
+    CHECK(muse_brain_lr_eff(&b13, 0.1f) > 0.16f,
+          "lr: good mood offsets toward faster learning");
+    b13.somatic.valence = -1.0f; b13.somatic.mood = 1.0f;
+    CHECK(fabsf(muse_brain_lr_eff(&b13, 0.1f) - 0.4f) < 1e-6f,
+          "lr: multiplier clamps at 4x");
+    b13.somatic.valence = 1.0f; b13.somatic.mood = -1.0f;
+    CHECK(fabsf(muse_brain_lr_eff(&b13, 0.1f) - 0.02f) < 1e-6f,
+          "lr: multiplier clamps at 0.2x");
+
+    /* Behavioral: a creature that feels bad revises its model faster
+     * than one that feels good, given the same evidence. */
+    muse_brain_state_t b14a, b14b;
+    muse_brain_init(&b14a, cap_log);
+    muse_brain_init(&b14b, cap_log);
+    muse_brain_feed_valence(&b14a, -1.0f, 1000);
+    muse_brain_tick(&b14a, 1000, false);
+    muse_brain_feed_valence(&b14b, 1.0f, 1000);
+    muse_brain_tick(&b14b, 1000, false);
+    for (int i = 0; i < 5; i++) {
+        muse_brain_feed_learning(&b14a, 0, 1.0f, (uint32_t)(i * 1000));
+        muse_brain_feed_learning(&b14b, 0, 1.0f, (uint32_t)(i * 1000));
+    }
+    CHECK(b14a.learn_fast[0] > b14b.learn_fast[0] + 0.1f,
+          "lr: bad feeling revises the model faster");
 
     printf(failures ? "\n%d FAILURES\n" : "\nall brain tests passed\n", failures);
     return failures != 0;
