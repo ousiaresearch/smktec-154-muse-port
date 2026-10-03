@@ -307,7 +307,15 @@ keep them separate channels.
    feed_valence feeds the owner bond (distress/λ/β); feed_partner()
    for explicit estimates; bond (λ,β) persists via NVS, distress
    resets. 118/118 host checks green.
-10. **Setpoint drift + sensor recentering** (slowest loops; last).
+10. **Setpoint drift + sensor recentering** — DONE 2026-10-03. Allostatic
+   defended levels (Sterling rheostasis): sp_energy/fatigue/tension
+   start at the designed constants and drift toward sustained demand
+   (~5.5h EMA; one-signed persistent error is what survives the filter).
+   Drift range widens with growth stage (newborn 0.25×, adolescent 1×),
+   synced in consolidate(). Sensor P4: the agitation sensor recenters
+   subtractively on its expected input (chronic jostling habituates to
+   a 0.3 neutral baseline; startle still registers). 114/114 host
+   checks green. All 10 sequential steps complete.
 
 ## Honest gaps (the papers don't give us these)
 

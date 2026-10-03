@@ -28,6 +28,12 @@ void muse_brain_init(muse_brain_state_t *b, muse_brain_log_fn log)
     /* Partner 0 is the owner: a neutral starting bond. */
     b->partners[0].lambda = 0.5f;
     b->partners[0].beta = 0.5f;
+    /* Allostatic setpoints start at the designed constants. */
+    b->sp_energy = MUSE_SETPOINT_ENERGY;
+    b->sp_fatigue = MUSE_SETPOINT_FATIGUE;
+    b->sp_tension = MUSE_SETPOINT_TENSION;
+    b->growth_stage = 0;
+    b->agit_base = 0.3f;      /* neutral: mild agitation is expected */
     b->pred_energy = 0.5f;
     b->pred_tension = 0.0f;
     for (int d = 0; d < MUSE_LEARN_DOMAINS; d++) {
@@ -54,11 +60,11 @@ static float raw_drive(const muse_brain_state_t *b)
 {
     float dev[3] = { 0.0f, 0.0f, 0.0f };
     if (!b->somatic.stale)
-        dev[0] = CLAMP01(MUSE_SETPOINT_ENERGY - b->somatic.energy);
+        dev[0] = CLAMP01(b->sp_energy - b->somatic.energy);
     if (!b->fatigue.stale)
-        dev[1] = CLAMP01(b->fatigue.level - MUSE_SETPOINT_FATIGUE);
+        dev[1] = CLAMP01(b->fatigue.level - b->sp_fatigue);
     if (!b->somatic.stale)
-        dev[2] = CLAMP01(b->somatic.tension - MUSE_SETPOINT_TENSION);
+        dev[2] = CLAMP01(b->somatic.tension - b->sp_tension);
     float s = 0.0f;
     for (int i = 0; i < 3; i++)
         s += powf(dev[i], MUSE_DRIVE_M);
@@ -249,6 +255,33 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
         b->partners[i].beta += (0.5f - b->partners[i].beta) *
                               (1.0f - MUSE_DECAY_SLOW);
     }
+
+    /* L1/Q4 setpoint drift (Sterling rheostasis): sustained demand
+     * teaches the effectors a new normal — the defended level follows
+     * the sustained level of the variable. The drift range widens with
+     * growth stage (newborn defends narrow ranges, adolescent full).
+     * The slow EMA is the "sustained" filter: one-signed persistent
+     * error is what survives it; noise doesn't. */
+    {
+        float w = 0.25f + 0.25f * (float)b->growth_stage;  /* 0.25..1.0 */
+        const float r = 0.0001f;   /* ~5.5h time constant at 2s ticks */
+        if (!b->somatic.stale) {
+            float lo = MUSE_SETPOINT_ENERGY - 0.30f * w;
+            float hi = MUSE_SETPOINT_ENERGY + 0.15f * w;
+            float sp = b->sp_energy + (b->somatic.energy - b->sp_energy) * r;
+            b->sp_energy = sp < lo ? lo : (sp > hi ? hi : sp);
+            float tlo = MUSE_SETPOINT_TENSION - 0.10f * w;
+            float thi = MUSE_SETPOINT_TENSION + 0.30f * w;
+            float st = b->sp_tension + (b->somatic.tension - b->sp_tension) * r;
+            b->sp_tension = st < tlo ? tlo : (st > thi ? thi : st);
+        }
+        if (!b->fatigue.stale) {
+            float flo = MUSE_SETPOINT_FATIGUE - 0.10f * w;
+            float fhi = MUSE_SETPOINT_FATIGUE + 0.35f * w;
+            float sf = b->sp_fatigue + (b->fatigue.level - b->sp_fatigue) * r;
+            b->sp_fatigue = sf < flo ? flo : (sf > fhi ? fhi : sf);
+        }
+    }
     /* Mood ω (Hesp level-2 / Joffily eq. 4): slow EMA of derived
      * valence — signed model-fitness. This is what persists across
      * sleep and what gates learning in step 2. */
@@ -307,7 +340,14 @@ void muse_brain_feed_motion(muse_brain_state_t *b, float agitation_01,
     b->pred_tension += (agitation_01 - b->pred_tension) *
                        muse_brain_lr_eff_ch(b, 0.1f, MUSE_DRIVE_TENSION);
     b->vta = CLAMP01(b->vta * 0.85f + err * 0.9f);
-    b->somatic.tension = CLAMP01(b->somatic.tension * 0.7f + agitation_01 * 0.3f);
+    /* Sterling P4 sensor adaptation: the agitation sensor recenters on
+     * its expected input range (subtractive, linear at firmware scale).
+     * A chronically jostled creature habituates — only UNUSUAL jostling
+     * registers as tension. arousal/alertness still see the raw input
+     * (startle must not habituate). */
+    b->agit_base += (agitation_01 - b->agit_base) * 0.002f;
+    float agitation_eff = CLAMP01(agitation_01 - b->agit_base + 0.3f);
+    b->somatic.tension = CLAMP01(b->somatic.tension * 0.7f + agitation_eff * 0.3f);
     b->somatic.arousal = CLAMP01(b->somatic.arousal + agitation_01 * 0.2f);
     b->lc.alertness = CLAMP01(b->lc.alertness + agitation_01 * 0.25f);
     b->somatic.updated_ms = now_ms;
@@ -369,11 +409,11 @@ void muse_brain_appraise(muse_brain_state_t *b)
      * novelty-seeking (0.7). changeability = self-decay: tension
      * decays 0.9/tick; the rest don't self-reverse. */
     float hunger = b->somatic.stale ? 0.0f :
-                   CLAMP01(MUSE_SETPOINT_ENERGY - b->somatic.energy);
+                   CLAMP01(b->sp_energy - b->somatic.energy);
     float tired = b->fatigue.stale ? 0.0f :
-                  CLAMP01(b->fatigue.level - MUSE_SETPOINT_FATIGUE);
+                  CLAMP01(b->fatigue.level - b->sp_fatigue);
     float tense = b->somatic.stale ? 0.0f :
-                  CLAMP01(b->somatic.tension - MUSE_SETPOINT_TENSION);
+                  CLAMP01(b->somatic.tension - b->sp_tension);
     float bored = CLAMP01(b->boredom);
     muse_appraisal_t *a = b->vote.drives;
     a[MUSE_DRIVE_HUNGER]   = (muse_appraisal_t){ hunger, -hunger, 0.0f, 0.0f, hunger };
@@ -611,11 +651,11 @@ float muse_brain_drive(const muse_brain_state_t *b, char *need_out,
      * Stale subsystems contribute nothing — no invented needs. */
     float hunger = 0, tired = 0, tense = 0;
     if (!b->somatic.stale)
-        hunger = CLAMP01(MUSE_SETPOINT_ENERGY - b->somatic.energy);
+        hunger = CLAMP01(b->sp_energy - b->somatic.energy);
     if (!b->fatigue.stale)
-        tired = CLAMP01(b->fatigue.level - MUSE_SETPOINT_FATIGUE);
+        tired = CLAMP01(b->fatigue.level - b->sp_fatigue);
     if (!b->somatic.stale)
-        tense = CLAMP01(b->somatic.tension - MUSE_SETPOINT_TENSION);
+        tense = CLAMP01(b->somatic.tension - b->sp_tension);
 
     const char *need = "none";
     float biggest = 0.0f;
@@ -749,6 +789,10 @@ void muse_brain_consolidate(muse_brain_state_t *b, muse_identity_t *id)
     float w = muse_brain_stress_window(b);
     for (int i = 0; i < 16; i++)
         b->familiarity[i] += (1.0f - b->familiarity[i]) * 0.1f * w;
+    /* Growth stage is the only identity field the tick loop needs:
+     * it widens the setpoint drift range (Sterling rheostasis stages). */
+    b->growth_stage = id->growth_stage;
+
     muse_brain_sleep_save(b, id);
 
     /* The dream pass: fold the day's counters into one diary entry. */

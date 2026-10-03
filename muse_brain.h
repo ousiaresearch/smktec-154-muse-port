@@ -259,6 +259,16 @@ typedef struct {
     /* L8 social: partner-indexed coupling + precision. */
     muse_partner_t partners[MUSE_NPARTNERS];
     float couple;         /* λ·d^other (partner 0): felt social distress */
+    /* L1/Q4 allostasis (Sterling): setpoints are defended levels that
+     * drift toward sustained demand (rheostasis). Growth stage widens
+     * the allowed drift range (newborn: narrow; adolescent: full). */
+    float sp_energy;
+    float sp_fatigue;
+    float sp_tension;
+    uint32_t growth_stage;  /* synced in consolidate() */
+    /* Sterling P4 sensor adaptation: the agitation sensor recenters on
+     * its expected input range (subtractive, linear). */
+    float agit_base;
     /* Curiosity predictor (research intake: Pathak et al. 2017, firmware
      * scale): EMA predictors per channel; surprise = |prediction-error|. */
     float pred_energy;

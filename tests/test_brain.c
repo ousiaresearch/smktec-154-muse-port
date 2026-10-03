@@ -604,6 +604,65 @@ int main(void)
           strstr(snap30, "\"other\"") != NULL,
           "social: snapshot reports coupling");
 
+    /* L1/Q4 setpoint drift + sensor recentering (Sterling; SYSTEMS.md
+     * step 10). */
+    muse_brain_state_t b36;
+    muse_brain_init(&b36, cap_log);
+    CHECK(fabsf(b36.sp_energy - 0.80f) < 1e-6f &&
+          fabsf(b36.sp_fatigue - 0.15f) < 1e-6f &&
+          fabsf(b36.sp_tension - 0.20f) < 1e-6f,
+          "drift: setpoints start at the designed constants");
+    /* Sustained low energy drags the defended level down; the chronic
+     * hunger shrinks (the new level becomes normal). */
+    b36.growth_stage = 3;                              /* full range */
+    muse_brain_feed_battery(&b36, 3.6f, false, 1000);  /* energy 0.5 */
+    for (int i = 0; i < 20000; i++)
+        muse_brain_tick(&b36, 2000 + i, false);
+    CHECK(b36.sp_energy < 0.70f,
+          "drift: sustained demand moves the defended level");
+    CHECK(b36.sp_energy >= 0.50f, "drift: defended level stays in range");
+    {
+        float hunger = b36.sp_energy - b36.somatic.energy;
+        CHECK(hunger < 0.10f, "drift: chronic hunger shrinks (rheostasis)");
+    }
+    /* Newborn defends a narrow range; growth widens it. */
+    muse_brain_state_t b37;
+    muse_brain_init(&b37, cap_log);
+    b37.growth_stage = 0;                              /* newborn */
+    muse_brain_feed_battery(&b37, 3.0f, false, 1000);  /* energy 0 */
+    for (int i = 0; i < 20000; i++)
+        muse_brain_tick(&b37, 2000 + i, false);
+    CHECK(b37.sp_energy >= 0.72f,
+          "drift: newborn range stays narrow (0.80-0.075)");
+    b37.growth_stage = 3;                              /* adolescent */
+    for (int i = 0; i < 20000; i++)
+        muse_brain_tick(&b37, 22000 + i, false);
+    CHECK(b37.sp_energy < 0.72f,
+          "drift: adolescent range widens toward the sustained level");
+    /* Sensor recentering: chronic jostling habituates. */
+    muse_brain_state_t b38;
+    muse_brain_init(&b38, cap_log);
+    for (int i = 0; i < 3000; i++)
+        muse_brain_feed_motion(&b38, 0.6f, 1000 + i);
+    CHECK(b38.agit_base > 0.5f, "recenter: sensor learns the expected input");
+    CHECK(fabsf(b38.somatic.tension - 0.3f) < 0.05f,
+          "recenter: chronic jostling settles at the neutral baseline");
+    /* A startle still gets through. */
+    {
+        float t_pre = b38.somatic.tension;
+        muse_brain_feed_motion(&b38, 1.0f, 6000);
+        CHECK(b38.somatic.tension > t_pre + 0.05f,
+              "recenter: unusual jolts still register");
+    }
+    /* Growth stage syncs through consolidate. */
+    muse_brain_state_t b39;
+    muse_identity_t id39;
+    memset(&id39, 0, sizeof(id39));
+    id39.growth_stage = 2;
+    muse_brain_init(&b39, cap_log);
+    muse_brain_consolidate(&b39, &id39);
+    CHECK(b39.growth_stage == 2, "drift: growth stage syncs in consolidate");
+
     printf(failures ? "\n%d FAILURES\n" : "\nall brain tests passed\n", failures);
     return failures != 0;
 }
