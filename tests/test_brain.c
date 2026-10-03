@@ -158,12 +158,37 @@ int main(void)
     CHECK(muse_brain_suggest_gut(&b9) == MUSE_GUT_PAUSE,
           "appraisal: critical energy -> PAUSE (goal conduciveness)");
     muse_brain_feed_valence(&b9, -0.7f, 2000);
+    muse_brain_tick(&b9, 2000, false);   /* derive valence from the pulse */
     CHECK(muse_brain_suggest_gut(&b9) == MUSE_GUT_DOUBT,
           "appraisal: bad valence -> DOUBT (pleasantness)");
-    muse_brain_feed_valence(&b9, -0.3f, 3000);  /* valence now -1.0 */
+    muse_brain_feed_valence(&b9, -0.3f, 3000);
     muse_brain_feed_battery(&b9, 3.05f, false, 4000);  /* energy ~0.04 */
+    muse_brain_tick(&b9, 4000, false);
     CHECK(muse_brain_suggest_gut(&b9) == MUSE_GUT_STOP,
           "appraisal: deeply bad + no resources -> STOP");
+
+    /* L2 valence (SYSTEMS.md): derived from drive change, not assigned.
+     * Charge the creature (drive falls) -> positive valence, HOPE. */
+    muse_brain_state_t b9b;
+    muse_brain_init(&b9b, cap_log);
+    muse_brain_feed_battery(&b9b, 3.2f, false, 1000);  /* drive high */
+    muse_brain_tick(&b9b, 2000, false);                /* seed */
+    CHECK(b9b.emotion == MUSE_EMO_CALM, "valence: seeded tick is calm");
+    muse_brain_feed_battery(&b9b, 4.1f, true, 4000);   /* drive falls */
+    muse_brain_tick(&b9b, 4000, false);
+    CHECK(b9b.somatic.valence > 0.5f,
+          "valence: falling drive feels good (-dD/dt)");
+    CHECK(b9b.emotion == MUSE_EMO_HOPE,
+          "valence: improving+accelerating reads as hope");
+    /* Drain it again (drive rises) -> the flip names disappointment. */
+    muse_brain_feed_battery(&b9b, 3.2f, false, 6000);
+    muse_brain_tick(&b9b, 6000, false);
+    CHECK(b9b.somatic.valence < -0.5f,
+          "valence: rising drive feels bad");
+    CHECK(b9b.emotion == MUSE_EMO_DISAPPOINTMENT,
+          "valence: + to - flip reads as disappointment");
+    CHECK(strcmp(muse_emotion_name(b9b.emotion), "disappointment") == 0,
+          "valence: emotion names itself");
 
     /* ALMA medium layer: mood tracks valence slowly. */
     muse_brain_state_t b10;

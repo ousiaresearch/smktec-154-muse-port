@@ -29,7 +29,8 @@ static void cap_log(const char *line) { (void)line; }
 static void make_veto_state(muse_brain_state_t *b)
 {
     muse_brain_feed_battery(b, 3.05f, false, 1000);  /* energy ~0.04 */
-    muse_brain_feed_valence(b, -1.0f, 2000);          /* valence -1.0 */
+    muse_brain_feed_valence(b, -1.0f, 2000);          /* event pulse */
+    muse_brain_tick(b, 3000, false);                  /* derive valence */
 }
 
 int main(void)

@@ -245,8 +245,13 @@ keep them separate channels.
 
 ## Build order (firmware-first)
 
-1. **L2 valence derivation** — `v_fast`, quadrant, `ω`; replace
-   `feed_valence` nudges. (A dozen floats; highest value per line.)
+1. **L2 valence derivation** — DONE 2026-10-03. `v = −Δd/dt × gain +
+   affect_pulse`; Joffily quadrant emotions (hope/happiness/fear/
+   unhappiness + relief/disappointment flips); mood ω as slow EMA of
+   derived valence; `feed_valence()` repurposed as the transient event
+   channel (the future social-coupling stub — pet/error are d^other
+   inputs, not valence assignments). Snapshot carries `"emotion"`.
+   38/38 host checks green.
 2. **Joffily learning-rate law** — apply to learning EMAs + consolidation.
 3. **Boredom drive** — familiarity/info-gain EMAs; wire to NA temperature.
 4. **Doya modulators** — four scalars + interaction rules (correct mapping).

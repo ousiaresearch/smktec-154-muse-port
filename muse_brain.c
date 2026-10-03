@@ -36,6 +36,23 @@ static bool aged(uint32_t updated_ms, uint32_t now_ms, uint32_t budget_ms)
     return (now_ms - updated_ms) > budget_ms;
 }
 
+/* Raw homeostatic drive magnitude (Keramati & Gutkin): Euclidean norm
+ * of the per-drive deviations from setpoint. Stale subsystems
+ * contribute nothing — no invented needs. Shared by tick() (for the
+ * valence differentiator) and muse_brain_drive() (the public API). */
+static float raw_drive(const muse_brain_state_t *b)
+{
+    float hunger = 0, tired = 0, tense = 0;
+    if (!b->somatic.stale)
+        hunger = CLAMP01(MUSE_SETPOINT_ENERGY - b->somatic.energy);
+    if (!b->fatigue.stale)
+        tired = CLAMP01(b->fatigue.level - MUSE_SETPOINT_FATIGUE);
+    if (!b->somatic.stale)
+        tense = CLAMP01(b->somatic.tension - MUSE_SETPOINT_TENSION);
+    float mag = sqrtf(hunger * hunger + tired * tired + tense * tense);
+    return mag > 1.0f ? 1.0f : mag;
+}
+
 void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
 {
     /* ALMA layers, three clocks. Fast signals move in seconds... */
@@ -44,8 +61,54 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
     b->lc.alertness += (0.5f - b->lc.alertness) * (1.0f - MUSE_DECAY_FAST);
     b->novelty *= MUSE_DECAY_FAST;
     b->vta *= MUSE_DECAY_FAST;
-    /* ...valence decays over minutes, mood tracks it slower still. */
-    b->somatic.valence *= MUSE_DECAY_MEDIUM;
+
+    /* L2 valence (SYSTEMS.md): derived, never assigned.
+     * v = −Δdrive/Δt × gain + event pulse. Drive falling feels good,
+     * drive rising feels bad — regardless of absolute drive level.
+     * The emotion quadrant is Joffily's: sign(improvement velocity) ×
+     * sign(improvement acceleration); sign flips name relief and
+     * disappointment. */
+    if (!b->somatic.stale) {
+        float d = raw_drive(b);
+        b->affect_pulse *= MUSE_DECAY_MEDIUM;
+        float v_prev = b->somatic.valence;
+        float v;
+        if (!b->drive_seeded) {
+            /* First fresh tick: seed the differentiator, no feeling yet. */
+            b->drive_prev = d;
+            b->drive_seeded = true;
+            v = b->affect_pulse;
+        } else {
+            float v_body = -(d - b->drive_prev) * MUSE_VALENCE_GAIN;
+            b->drive_prev = d;
+            v = v_body + b->affect_pulse;
+        }
+        b->somatic.valence = v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v);
+
+        const float DB = MUSE_EMO_DEADBAND;
+        float dv = b->somatic.valence - v_prev;
+        muse_emotion_t e = MUSE_EMO_CALM;
+        if (v_prev > DB && b->somatic.valence < -DB)
+            e = MUSE_EMO_DISAPPOINTMENT;
+        else if (v_prev < -DB && b->somatic.valence > DB)
+            e = MUSE_EMO_RELIEF;
+        else if (b->somatic.valence > DB)
+            e = (dv > 0) ? MUSE_EMO_HOPE : MUSE_EMO_HAPPINESS;
+        else if (b->somatic.valence < -DB)
+            e = (dv < 0) ? MUSE_EMO_FEAR : MUSE_EMO_UNHAPPINESS;
+        b->emotion = e;
+    } else {
+        /* Stale body: no derived feeling; the old one fades. Re-seed
+         * the differentiator on the next fresh tick so stale gaps don't
+         * invent a velocity. */
+        b->somatic.valence *= MUSE_DECAY_FAST;
+        b->affect_pulse *= MUSE_DECAY_MEDIUM;
+        b->emotion = MUSE_EMO_CALM;
+        b->drive_seeded = false;
+    }
+    /* Mood ω (Hesp level-2 / Joffily eq. 4): slow EMA of derived
+     * valence — signed model-fitness. This is what persists across
+     * sleep and what gates learning in step 2. */
     b->somatic.mood += (b->somatic.valence - b->somatic.mood) *
                        (1.0f - MUSE_DECAY_SLOW);
 
@@ -111,11 +174,27 @@ void muse_brain_feed_motion(muse_brain_state_t *b, float agitation_01,
 void muse_brain_feed_valence(muse_brain_state_t *b, float delta,
                              uint32_t now_ms)
 {
-    /* Event-driven valence (amy): pet +, error −. */
-    float v = b->somatic.valence + delta;
-    b->somatic.valence = v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v);
+    /* Affect event: pet +, error −. Adds a transient pulse; the tick
+     * folds it into derived valence. This is the social-coupling
+     * channel (things that move the creature outside the drive model),
+     * not a valence assignment. */
+    float p = b->affect_pulse + delta;
+    b->affect_pulse = p > 1.0f ? 1.0f : (p < -1.0f ? -1.0f : p);
     b->somatic.updated_ms = now_ms;
     b->somatic.stale = false;
+}
+
+const char *muse_emotion_name(muse_emotion_t e)
+{
+    switch (e) {
+    case MUSE_EMO_HOPE:           return "hope";
+    case MUSE_EMO_HAPPINESS:      return "happiness";
+    case MUSE_EMO_FEAR:           return "fear";
+    case MUSE_EMO_UNHAPPINESS:    return "unhappiness";
+    case MUSE_EMO_RELIEF:         return "relief";
+    case MUSE_EMO_DISAPPOINTMENT: return "disappointment";
+    default:                      return "calm";
+    }
 }
 
 void muse_brain_feed_learning(muse_brain_state_t *b, int domain,
@@ -180,9 +259,8 @@ float muse_brain_drive(const muse_brain_state_t *b, char *need_out,
     if (tired > biggest)  { biggest = tired;  need = "rest"; }
     if (tense > biggest)  { biggest = tense;  need = "calm"; }
 
-    /* Euclidean magnitude of the deviation vector. */
-    float mag = sqrtf(hunger * hunger + tired * tired + tense * tense);
-    if (mag > 1.0f) mag = 1.0f;
+    /* Euclidean magnitude of the deviation vector (raw_drive). */
+    float mag = raw_drive(b);
     if (need_out && need_n > 0) {
         strncpy(need_out, biggest > 0.05f ? need : "none", need_n - 1);
         need_out[need_n - 1] = '\0';
@@ -347,6 +425,7 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
     int n = snprintf(out, out_n,
         "{\"self\":\"%.31s\",\"gen\":%lu,\"stage\":%lu,"
         "\"energy\":%.2f,\"tension\":%.2f,\"arousal\":%.2f,\"valence\":%.2f,"
+        "\"emotion\":\"%s\","
         "\"mood\":%.2f,\"drive\":%.2f,\"need\":\"%s\","
         "\"fatigue\":%.2f,\"quiet\":%s,\"phase\":%.2f,"
         "\"gate\":\"%s\",\"gate_why\":\"%s\","
@@ -358,6 +437,7 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
         b->somatic.stale ? -1.0 : (double)b->somatic.tension,
         b->lc.stale ? -1.0 : (double)b->lc.alertness,
         b->somatic.stale ? -9.0 : (double)b->somatic.valence,
+        muse_emotion_name(b->emotion),
         b->somatic.stale ? -9.0 : (double)b->somatic.mood,
         (double)drive, need,
         b->fatigue.stale ? -1.0 : (double)b->fatigue.level,

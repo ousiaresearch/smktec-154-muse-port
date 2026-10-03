@@ -50,6 +50,28 @@ extern "C" {
 #define MUSE_SETPOINT_FATIGUE 0.15f
 #define MUSE_SETPOINT_TENSION 0.20f
 
+/* L2 valence (SYSTEMS.md): the emotion quadrant from Joffily &
+ * Coricelli — sign(velocity of improvement) × sign(acceleration).
+ * Relief/disappointment are sign flips of the derivative itself. */
+typedef enum {
+    MUSE_EMO_CALM = 0,       /* |v| below deadband */
+    MUSE_EMO_HOPE,           /* improving, accelerating */
+    MUSE_EMO_HAPPINESS,      /* improving, decelerating */
+    MUSE_EMO_FEAR,           /* worsening, accelerating */
+    MUSE_EMO_UNHAPPINESS,    /* worsening, decelerating */
+    MUSE_EMO_RELIEF,         /* v flipped − to + */
+    MUSE_EMO_DISAPPOINTMENT  /* v flipped + to − */
+} muse_emotion_t;
+
+const char *muse_emotion_name(muse_emotion_t e);
+
+/* Valence derivation gain: maps per-tick drive change to [−1,1].
+ * Drive moves ~0.01–0.1 per 2s tick; ×10 makes a 0.1 improvement
+ * read as full positive valence. */
+#define MUSE_VALENCE_GAIN 10.0f
+/* Below this |v|, the creature is calm — no emotion named. */
+#define MUSE_EMO_DEADBAND 0.05f
+
 typedef struct {
     float phase;          /* 0..1 circadian phase */
     bool quiet_hours;     /* 23:00–05:30 local, or entrained */
@@ -61,8 +83,11 @@ typedef struct {
     float energy;         /* 0..1 — battery-derived */
     float tension;        /* 0..1 — IMU agitation-derived */
     float arousal;        /* 0..1, fast layer */
-    float valence;        /* -1..1, fast layer */
-    float mood;           /* -1..1, medium layer: slow EMA of valence (ALMA) */
+    float valence;        /* -1..1, fast layer: DERIVED as −Δdrive/Δt
+                           * plus a transient event pulse (see feed_valence).
+                           * Never assigned directly. */
+    float mood;           /* -1..1, medium layer (ω): slow EMA of derived
+                           * valence — signed model-fitness. Persists. */
     uint32_t updated_ms;
     bool stale;
 } muse_somatic_t;
@@ -115,6 +140,15 @@ typedef struct {
     float novelty;        /* 0..1 recent novelty rate */
     float vta;            /* 0..1 dopamine drive: prediction-error surprise */
     bool distracted;
+    /* L2 valence derivation state (SYSTEMS.md): valence is computed in
+     * tick() from drive change, never assigned. affect_pulse is the
+     * transient event channel (pet +, error −) — the future social
+     * coupling stub (λ·d^other): things that move the creature which
+     * aren't in the drive model. Decays over minutes. */
+    float drive_prev;     /* raw drive at the previous tick */
+    bool drive_seeded;    /* false until the first fresh tick seeds it */
+    float affect_pulse;   /* -1..1 transient event input to valence */
+    muse_emotion_t emotion;
     /* Curiosity predictor (research intake: Pathak et al. 2017, firmware
      * scale): EMA predictors per channel; surprise = |prediction-error|. */
     float pred_energy;
@@ -156,7 +190,11 @@ void muse_brain_note_novelty(muse_brain_state_t *b, uint32_t now_ms);
 void muse_brain_set_quiet_hours(muse_brain_state_t *b, bool quiet,
                                 float phase, uint32_t now_ms);
 
-/* Event-driven valence (amy): pet +, error −. Decays in tick. */
+/* Affect event (amy): pet +, error −. This does NOT set valence.
+ * Valence is derived in tick() as −Δdrive/Δt. An event injects a
+ * transient pulse into affect_pulse (the social-coupling channel):
+ * a pet is a momentary lift, an error a momentary blow, both fading
+ * over minutes. What the creature "feels" is drive change plus pulse. */
 void muse_brain_feed_valence(muse_brain_state_t *b, float delta,
                              uint32_t now_ms);
 
