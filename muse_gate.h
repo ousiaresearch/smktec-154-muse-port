@@ -47,6 +47,7 @@ typedef struct {
     float vta;               /* dopamine drive */
     float boredom;           /* 0..1 HHVG devaluation: familiar, uninformative */
     float explore_temp;      /* Doya β: 1 = exploit, 0 = explore */
+    float gamma;             /* Doya 5-HT: planning horizon; low = impulsive */
     float adj_confidence;
     bool  recovery_needed;
     bool  distracted;

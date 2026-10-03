@@ -301,6 +301,54 @@ int main(void)
           strstr(snap15, "\"boredom\"") != NULL,
           "boredom: snapshot reports it");
 
+    /* L3 Doya modulators (SYSTEMS.md step 4, corrected mapping):
+     * DA = TD error = fast valence; 5-HT = γ; NA = β; ACh = α. */
+    muse_brain_state_t b16;
+    muse_brain_init(&b16, cap_log);
+    CHECK(fabsf(b16.ht_gamma - 0.85f) < 1e-6f &&
+          fabsf(b16.ach_alpha - 0.7f) < 1e-6f &&
+          fabsf(b16.na_temp - 0.5f) < 1e-6f,
+          "doya: modulators start at baseline");
+    /* An oscillating world: δ flips sign every tick. */
+    for (int i = 0; i < 100; i++) {
+        muse_brain_feed_valence(&b16, (i % 2 == 0) ? 2.0f : -2.0f,
+                                (uint32_t)(1000 + i * 2000));
+        muse_brain_tick(&b16, (uint32_t)(2000 + i * 2000), false);
+    }
+    CHECK(b16.da_var > 0.5f, "doya: oscillation registers as variance");
+    CHECK(b16.ht_gamma < 0.8f,
+          "doya: uncertain world shortens the horizon (5-HT down)");
+    CHECK(b16.da_flips > 0.5f, "doya: flip rate tracked");
+    CHECK(b16.ach_alpha < 0.65f,
+          "doya: oscillating error lowers plasticity (delta-bar-delta)");
+    /* α is the global plasticity knob on the learning law. */
+    muse_brain_state_t b17;
+    muse_brain_init(&b17, cap_log);
+    b17.ach_alpha = 1.4f;
+    {
+        muse_brain_state_t b17b;
+        muse_brain_init(&b17b, cap_log);   /* α at baseline */
+        float r = muse_brain_lr_eff(&b17, 0.1f) /
+                  muse_brain_lr_eff(&b17b, 0.1f);
+        CHECK(fabsf(r - 2.0f) < 1e-4f,
+              "doya: doubling ACh doubles the learning rate");
+    }
+    /* Urgency (|δ|) sharpens β toward exploitation. */
+    muse_brain_state_t b18a, b18b;
+    muse_brain_init(&b18a, cap_log);
+    muse_brain_init(&b18b, cap_log);
+    muse_brain_feed_valence(&b18a, 2.0f, 1000);
+    for (int i = 0; i < 60; i++) {
+        muse_brain_tick(&b18a, (uint32_t)(2000 + i * 2000), false);
+        muse_brain_tick(&b18b, (uint32_t)(2000 + i * 2000), false);
+    }
+    CHECK(b18a.na_temp > b18b.na_temp + 0.05f,
+          "doya: urgency sharpens the choice temperature");
+    char snap18[1152];
+    CHECK(muse_brain_snapshot(&b18a, NULL, snap18, sizeof(snap18)) > 0 &&
+          strstr(snap18, "\"gamma\"") != NULL,
+          "doya: snapshot reports the modulators");
+
     printf(failures ? "\n%d FAILURES\n" : "\nall brain tests passed\n", failures);
     return failures != 0;
 }

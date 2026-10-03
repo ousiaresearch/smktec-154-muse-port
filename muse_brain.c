@@ -20,6 +20,8 @@ void muse_brain_init(muse_brain_state_t *b, muse_brain_log_fn log)
     b->somatic.arousal = 0.5f;
     b->lc.alertness = 0.5f;
     b->na_temp = 0.5f;            /* Doya β starts balanced */
+    b->ht_gamma = MUSE_HT_GAMMA_BASE;
+    b->ach_alpha = MUSE_ACH_ALPHA_BASE;
     b->pred_energy = 0.5f;
     b->pred_tension = 0.0f;
     for (int d = 0; d < MUSE_LEARN_DOMAINS; d++) {
@@ -124,8 +126,14 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
         b->boredom = b->familiarity[ctx] * (1.0f - CLAMP01(b->info_gain));
         if (b->boredom > b->peak_boredom)
             b->peak_boredom = b->boredom;
-        /* Boredom pulls β toward exploration; β relaxes back to 0.5. */
-        float target = 0.5f - 0.5f * b->boredom;
+        /* β target: boredom pulls toward exploration; high serotonin
+         * (long horizon) inhibits NA; urgency (|δ|) sharpens focus
+         * (Doya Fig. 9 interaction graph). */
+        float target = 0.5f - 0.5f * b->boredom
+                       - 0.4f * (b->ht_gamma - MUSE_HT_GAMMA_BASE)
+                       + 0.5f * fabsf(b->somatic.valence);
+        if (target < 0.05f) target = 0.05f;
+        if (target > 1.0f) target = 1.0f;
         b->na_temp += (target - b->na_temp) * (1.0f - MUSE_DECAY_MEDIUM);
         /* Restlessness: crossing into boredom is a wandering episode. */
         if (b->prev_boredom <= 0.6f && b->boredom > 0.6f) {
@@ -134,6 +142,36 @@ void muse_brain_tick(muse_brain_state_t *b, uint32_t now_ms, bool sleeping)
             b->dmn.stale = false;
         }
         b->prev_boredom = b->boredom;
+    }
+
+    /* L3 Doya modulators (corrected mapping): DA = TD error = fast
+     * valence — no new state, just its statistics. 5-HT = γ, NA = β
+     * (above), ACh = global plasticity α. */
+    {
+        float delta = b->somatic.valence;   /* δ */
+        b->da_mean += (delta - b->da_mean) * 0.05f;
+        float dev = delta - b->da_mean;
+        b->da_var += (dev * dev - b->da_var) * 0.05f;
+        int s = (delta > MUSE_EMO_DEADBAND) ? 1 :
+                (delta < -MUSE_EMO_DEADBAND ? -1 : 0);
+        int ps = (b->da_prev > MUSE_EMO_DEADBAND) ? 1 :
+                 (b->da_prev < -MUSE_EMO_DEADBAND ? -1 : 0);
+        float flip = (s != 0 && ps != 0 && s != ps) ? 1.0f : 0.0f;
+        b->da_flips += (flip - b->da_flips) * 0.05f;
+        b->da_prev = delta;
+        /* Uncertain world (high Var δ) ⇒ shorten the horizon. */
+        float g_target = MUSE_HT_GAMMA_BASE -
+                         0.4f * fminf(1.0f, b->da_var * 3.0f);
+        b->ht_gamma += (g_target - b->ht_gamma) * (1.0f - MUSE_DECAY_SLOW);
+        /* Oscillating δ ⇒ α too high (delta-bar-delta); high
+         * serotonin inhibits plasticity. */
+        float a_target = MUSE_ACH_ALPHA_BASE
+                         - 0.4f * fminf(1.0f, b->da_flips * 2.0f)
+                         - 0.3f * fmaxf(0.0f, (b->ht_gamma -
+                                               MUSE_HT_GAMMA_BASE) * 2.0f);
+        if (a_target < 0.1f) a_target = 0.1f;
+        if (a_target > 1.0f) a_target = 1.0f;
+        b->ach_alpha += (a_target - b->ach_alpha) * (1.0f - MUSE_DECAY_SLOW);
     }
     /* Mood ω (Hesp level-2 / Joffily eq. 4): slow EMA of derived
      * valence — signed model-fitness. This is what persists across
@@ -230,11 +268,15 @@ const char *muse_emotion_name(muse_emotion_t e)
 
 float muse_brain_lr_eff(const muse_brain_state_t *b, float base_lr)
 {
+    /* Joffily eq. 4, Doya-scaled: the global plasticity α (ACh)
+     * multiplies the structural base rate; valence gates it
+     * exponentially. At α = baseline the Joffily law stands alone. */
+    float a_norm = b->ach_alpha / MUSE_ACH_ALPHA_BASE;
     float m = expf(-MUSE_LR_VALENCE_K * b->somatic.valence +
                    b->somatic.mood);
     if (m < 0.2f) m = 0.2f;
     if (m > 4.0f) m = 4.0f;
-    return base_lr * m;
+    return base_lr * a_norm * m;
 }
 
 void muse_brain_feed_learning(muse_brain_state_t *b, int domain,
@@ -356,6 +398,7 @@ void muse_brain_gate_inputs(const muse_brain_state_t *b, float adj_confidence,
     out->vta = b->vta;
     out->boredom = b->boredom;
     out->explore_temp = b->na_temp;
+    out->gamma = b->ht_gamma;
     out->adj_confidence = CLAMP01(adj_confidence);
     out->recovery_needed = !b->fatigue.stale && b->fatigue.recovery_needed;
     out->distracted = b->distracted;
@@ -474,6 +517,7 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
         "{\"self\":\"%.31s\",\"gen\":%lu,\"stage\":%lu,"
         "\"energy\":%.2f,\"tension\":%.2f,\"arousal\":%.2f,\"valence\":%.2f,"
         "\"emotion\":\"%s\",\"boredom\":%.2f,"
+        "\"gamma\":%.2f,\"alpha\":%.2f,"
         "\"mood\":%.2f,\"drive\":%.2f,\"need\":\"%s\","
         "\"fatigue\":%.2f,\"quiet\":%s,\"phase\":%.2f,"
         "\"gate\":\"%s\",\"gate_why\":\"%s\","
@@ -487,6 +531,8 @@ size_t muse_brain_snapshot(const muse_brain_state_t *b,
         b->somatic.stale ? -9.0 : (double)b->somatic.valence,
         muse_emotion_name(b->emotion),
         (double)b->boredom,
+        (double)b->ht_gamma,
+        (double)b->ach_alpha,
         b->somatic.stale ? -9.0 : (double)b->somatic.mood,
         (double)drive, need,
         b->fatigue.stale ? -1.0 : (double)b->fatigue.level,

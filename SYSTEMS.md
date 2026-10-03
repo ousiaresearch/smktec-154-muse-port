@@ -263,7 +263,12 @@ keep them separate channels.
    exploration, increments the DMN wandering counter on 0.6-crossing,
    and is reported in gate inputs + snapshot + the dream line.
    49/49 host checks green.
-4. **Doya modulators** — four scalars + interaction rules (correct mapping).
+4. **Doya modulators** — DONE 2026-10-03. Corrected mapping: DA = TD
+   error = v_fast (no new state); 5-HT = γ horizon (0.85 baseline,
+   shortened by Var(δ)); NA = β (na_temp, with boredom + 5-HT-inhibition
+   + urgency terms); ACh = α global plasticity (0.7 baseline, lowered by
+   δ sign-flips per delta-bar-delta, scales lr_eff). 60/60 host checks
+   green. Behavioral consumers of γ/β land in step 6.
 5. **Minkowski drive + `r` signal** — parameterize existing drive.
 6. **Continuous action vote** under the 26 rules; appraisal frame
    generators (controllability/changeability).

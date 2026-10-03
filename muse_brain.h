@@ -74,6 +74,9 @@ const char *muse_emotion_name(muse_emotion_t e);
 /* Joffily lr_eff = lr · exp(−k·v + ω): sensitivity of learning to
  * valence. k=1 gives e^1 ≈ 2.7× faster learning at v=−1. */
 #define MUSE_LR_VALENCE_K 1.0f
+/* Doya baselines: the modulators relax toward these. */
+#define MUSE_HT_GAMMA_BASE 0.85f
+#define MUSE_ACH_ALPHA_BASE 0.7f
 
 typedef struct {
     float phase;          /* 0..1 circadian phase */
@@ -166,6 +169,20 @@ typedef struct {
                            * boredom coupling is set here. */
     float peak_boredom;
     float prev_boredom;
+    /* L3 Doya modulators (SYSTEMS.md, corrected mapping): metaparameters,
+     * not drives. Dopamine = TD error = fast valence (no new state —
+     * v_fast IS δ). Serotonin = discount γ (horizon). Noradrenaline =
+     * inverse temperature β (na_temp, from step 3). Acetylcholine =
+     * global plasticity α; high = encode mode, low = retrieve mode.
+     * da_* track δ's statistics for the Doya Fig. 9 interaction graph:
+     * Var(δ) ⇒ γ down; sign-flips(δ) ⇒ α down (delta-bar-delta);
+     * high γ ⇒ β,α down; |δ| (urgency) ⇒ β up. */
+    float ht_gamma;       /* serotonin: 0..1 planning horizon */
+    float ach_alpha;      /* acetylcholine: 0..1 global plasticity */
+    float da_mean;        /* EMA of δ */
+    float da_var;         /* EMA of Var(δ): world uncertainty */
+    float da_flips;       /* EMA of δ sign-flip rate */
+    float da_prev;        /* previous δ (flip detection) */
     /* Curiosity predictor (research intake: Pathak et al. 2017, firmware
      * scale): EMA predictors per channel; surprise = |prediction-error|. */
     float pred_energy;
@@ -215,13 +232,15 @@ void muse_brain_set_quiet_hours(muse_brain_state_t *b, bool quiet,
 void muse_brain_feed_valence(muse_brain_state_t *b, float delta,
                              uint32_t now_ms);
 
-/* Learning-rate law (Joffily & Coricelli eq. 4, SYSTEMS.md step 2):
- * lr_eff = lr · exp(−k·v + ω), clamped to [0.2×, 4×].
+/* Learning-rate law (Joffily & Coricelli eq. 4, Doya-scaled,
+ * SYSTEMS.md steps 2+4): lr_eff = base · (α/α_base) · exp(−k·v + ω),
+ * clamped so the exponential stays in [0.2×, 4×].
  * Negative valence (the model is failing) learns fast — the world may
  * have changed. Positive valence (the model is succeeding) learns slow
- * and consolidates. Mood ω is the persistent offset: a creature in a
- * good mood is harder to teach, in a bad mood easier.
- * Steps 7–8 multiply in the precision-share and windowed-stress gates. */
+ * and consolidates. Mood ω is the persistent offset. The Doya
+ * acetylcholine signal α is the global plasticity knob both rates
+ * hang off. Steps 7–8 multiply in the precision-share and
+ * windowed-stress gates. */
 float muse_brain_lr_eff(const muse_brain_state_t *b, float base_lr);
 
 /* Learning-progress feed (Oudeyer): success 0..1 per domain. */
