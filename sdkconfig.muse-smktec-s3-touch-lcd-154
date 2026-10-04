@@ -19,6 +19,10 @@
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_MUSE_BOARD_SMKTEC_S3_TOUCH_LCD_154=y
 
+# Pairing-confirm button: BOOT (GPIO0). The SDK default (GPIO28) doesn't exist
+# on this board; PWR (GPIO5) is push-to-talk, PLUS (GPIO4) is unassigned.
+CONFIG_HOMEHUB_BUTTON_GPIO=0
+
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
