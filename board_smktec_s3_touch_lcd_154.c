@@ -40,6 +40,7 @@
 #include "esp_lcd_touch_cst816s.h"
 #include "esp_log.h"
 #include "esp_lv_adapter.h"
+#include "esp_netif.h"
 #include "esp_sleep.h"
 #include "esp_sntp.h"
 #include "esp_timer.h"
@@ -116,6 +117,30 @@ static void sntp_sync_cb(struct timeval *tv)
     ESP_LOGI(TAG, "SNTP synced");
 }
 
+/* SNTP needs the lwIP TCPIP thread, which Home Link's wifi_mgr creates via
+ * esp_netif_init() after board init — calling esp_sntp_* here asserts
+ * ("Invalid mbox"). So this one-shot task waits for a Wi-Fi IP, then inits
+ * SNTP once. Best-effort: if Wi-Fi never comes up, it just exits. */
+static void sntp_wait_task(void *arg)
+{
+    (void)arg;
+    for (int i = 0; i < 300; i++) {  /* up to ~5 min */
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+        if (sta != NULL) {
+            esp_netif_ip_info_t ip;
+            if (esp_netif_get_ip_info(sta, &ip) == ESP_OK && ip.ip.addr != 0) {
+                break;
+            }
+        }
+    }
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_set_time_sync_notification_cb(sntp_sync_cb);
+    esp_sntp_init();
+    vTaskDelete(NULL);
+}
+
 static esp_err_t init(void)
 {
     /* Enable the battery path (xiaozhi PowerON()). */
@@ -150,14 +175,11 @@ static esp_err_t init(void)
     esp_err_t adc_err = adc_oneshot_config_channel(s_adc, BATT_ADC_CH, &ch_cfg);
 
     /* SNTP: wall-clock time for diary timestamps, quiet hours, and the
-     * SCN phase. Best-effort — runs whenever Wi-Fi is up, harmless
-     * without it. VERIFY on IDF v6.0.1: esp_sntp API names. */
+     * SCN phase. The TCPIP thread doesn't exist yet at board init, so the
+     * actual esp_sntp_* calls are deferred to sntp_wait_task below. */
     setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0/2", 1);  /* TODO: settings page */
     tzset();
-    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, "pool.ntp.org");
-    esp_sntp_set_time_sync_notification_cb(sntp_sync_cb);
-    esp_sntp_init();
+    xTaskCreate(sntp_wait_task, "sntp_wait", 2048, NULL, 5, NULL);
 
     /* The creature wakes up as someone: identity first (NVS mint or load),
      * then the diary (best-effort SD mount), then the brain with the diary
