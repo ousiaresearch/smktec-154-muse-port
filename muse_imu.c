@@ -29,9 +29,8 @@
 
 #include "muse_imu.h"
 
-/* VERIFY: exact header/type names against waveshare/qmi8658==1.0.0. */
-#include "qmi8658.h" /* VERIFY include path */
-/* VERIFY: device handle type name (`qmi8658_handle_t` assumed). */
+/* Verified against waveshare/qmi8658 v1.0.0 (see components/qmi8658). */
+#include "qmi8658.h"
 
 #include <math.h>
 #include <string.h>
@@ -100,7 +99,7 @@ static const float s_ref[][3] = {
 static bool s_inited;
 static esp_err_t s_init_result;
 static bool s_present;
-static qmi8658_handle_t s_dev; /* VERIFY type name */
+static qmi8658_dev_t s_dev;
 
 static TaskHandle_t s_task;
 static muse_imu_cb_t s_cb;
@@ -337,7 +336,7 @@ static void imu_task(void *arg)
     for (;;) {
         bool ready = false;
         if (qmi8658_is_data_ready(&s_dev, &ready) == ESP_OK && ready) {
-            qmi8658_sensor_data_t d; /* VERIFY type/field names */
+            qmi8658_data_t d;
             if (qmi8658_read_sensor_data(&s_dev, &d) == ESP_OK) {
                 /* Driver configured for m/s^2 (see muse_imu_init). */
                 engine_sample(d.accelX, d.accelY, d.accelZ, now_ms());
@@ -373,13 +372,12 @@ esp_err_t muse_imu_init(i2c_master_bus_handle_t bus)
         e = qmi8658_init(&s_dev, bus, MUSE_IMU_ADDR_ALT);
     }
     if (e != ESP_OK) {
-        /* VERIFY: qmi8658_init() must fail cleanly (WHO_AM_I check) when the
+        /* qmi8658_init() does a WHO_AM_I check and fails cleanly when the
          * chip is absent; we never touch the bus on this path. */
         ESP_LOGW(TAG, "QMI8658 not found; IMU disabled (%s)", esp_err_to_name(e));
         return s_init_result; /* graceful: absent, boot continues */
     }
 
-    /* VERIFY enum value names against the installed component headers. */
     e = qmi8658_set_accel_range(&s_dev, QMI8658_ACCEL_RANGE_8G);
     if (e == ESP_OK) {
         e = qmi8658_set_accel_odr(&s_dev, QMI8658_ACCEL_ODR_1000HZ);
@@ -390,12 +388,9 @@ esp_err_t muse_imu_init(i2c_master_bus_handle_t bus)
     if (e == ESP_OK) {
         e = qmi8658_set_gyro_odr(&s_dev, QMI8658_GYRO_ODR_1000HZ);
     }
-    if (e == ESP_OK) {
-        e = qmi8658_set_accel_unit_mps2(&s_dev, true);
-    }
-    if (e == ESP_OK) {
-        e = qmi8658_set_gyro_unit_rads(&s_dev, true);
-    }
+    /* Unit setters return void in qmi8658 v1.0.0. */
+    qmi8658_set_accel_unit_mps2(&s_dev, true);
+    qmi8658_set_gyro_unit_rads(&s_dev, true);
     if (e != ESP_OK) {
         ESP_LOGW(TAG, "QMI8658 configure failed; IMU disabled (%s)", esp_err_to_name(e));
         return s_init_result;

@@ -29,6 +29,11 @@ cp "$HERE/board_smktec_s3_touch_lcd_154.c" "$SDK/components/muse/boards/"
 echo "== copying IMU engine =="
 cp "$HERE/muse_imu.c" "$HERE/muse_imu.h" "$SDK/components/muse/"
 
+echo "== copying fixed qmi8658 component (IDF v6: esp_driver_i2c in REQUIRES) =="
+mkdir -p "$SDK/components/qmi8658"
+cp -r "$HERE/components/qmi8658/." "$SDK/components/qmi8658/"
+echo "(local components/qmi8658 overrides the waveshare/qmi8658 registry dep; see components/qmi8658/VENDORING.md)"
+
 echo "== copying gate + identity + brain + diary =="
 cp "$HERE/muse_gate.c" "$HERE/muse_gate.h" "$SDK/components/muse/"
 cp "$HERE/muse_identity.c" "$HERE/muse_identity.h" "$SDK/components/muse/"
