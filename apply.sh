@@ -502,3 +502,60 @@ EOF
 else
   echo "muse_settings_ui.c already patched"
 fi
+
+echo "== main/ble_server.c (PSRAM provision task stack) =="
+BLE="$SDK/main/ble_server.c"
+if ! grep -q "SMKTEC_PSRAM_PROVISION" "$BLE"; then
+  python3 - "$BLE" <<'EOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+
+# 1. Include heap_caps for PSRAM allocation
+old_inc = '#include "ble_server.h"'
+new_inc = '''#include "ble_server.h"
+#include "esp_heap_caps.h"
+// SMKTEC_PSRAM_PROVISION: The 8KB provision_task stack cannot be allocated
+// from internal RAM after Wi-Fi scan fragments the heap (4KB largest block).
+// Fall back to PSRAM (we have ~5MB free) instead of failing with
+// "error_operation_in_progress".'''
+assert old_inc in s, "ble_server include anchor not found"
+s = s.replace(old_inc, new_inc, 1)
+
+# 2. Replace xTaskCreate with PSRAM fallback
+old_create = '''            a->session_generation = link_pairing_mark_provisioning_active();
+            if (a->session_generation == 0
+                || xTaskCreate(provision_task, "prov", 8192, a, 5, NULL) != pdPASS) {'''
+new_create = '''            a->session_generation = link_pairing_mark_provisioning_active();
+            BaseType_t prov_task_ok = pdFAIL;
+            if (a->session_generation != 0) {
+                prov_task_ok = xTaskCreate(provision_task, "prov", 8192, a, 5, NULL);
+                if (prov_task_ok != pdPASS) {
+                    ESP_LOGW(TAG, "provision: internal RAM fragmented, using PSRAM stack");
+                    StackType_t *psram_stk = heap_caps_malloc(8192 * sizeof(StackType_t),
+                                                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+                    StaticTask_t *psram_tcb = heap_caps_malloc(sizeof(StaticTask_t),
+                                                              MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+                    if (psram_stk && psram_tcb) {
+                        TaskHandle_t h = xTaskCreateStatic(provision_task, "prov", 8192, a, 5,
+                                                           psram_stk, psram_tcb);
+                        prov_task_ok = (h != NULL) ? pdPASS : pdFAIL;
+                        // Note: PSRAM stack/TCB intentionally leaked (one-time ~8.5KB
+                        // from 5MB PSRAM). The task deletes itself after provisioning.
+                    }
+                    if (prov_task_ok != pdPASS) {
+                        heap_caps_free(psram_stk);
+                        heap_caps_free(psram_tcb);
+                    }
+                }
+            }
+            if (a->session_generation == 0 || prov_task_ok != pdPASS) {'''
+assert old_create in s, "provision_task create anchor not found"
+s = s.replace(old_create, new_create, 1)
+
+open(p, 'w').write(s)
+print("ble_server.c patched (PSRAM provision task)")
+EOF
+else
+  echo "ble_server.c already patched (PSRAM provision)"
+fi
