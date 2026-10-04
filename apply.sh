@@ -247,6 +247,23 @@ EOF
 else
   echo "CMakeLists already patched (turn gate, ledger, pages)"
 fi
+echo "== CMakeLists.txt (fatfs/sdmmc for muse_diary.c, IDF v6) =="
+CMK="$SDK/components/muse/CMakeLists.txt"
+if grep -q "esp_driver_pcnt fatfs" "$CMK"; then
+  echo "CMakeLists already patched (fatfs)"
+else
+  python3 - "$CMK" <<'EOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = "    esp_driver_pcnt)"
+new = "    esp_driver_pcnt fatfs sdmmc esp_driver_sdmmc)"
+assert old in s, "muse_priv_requires anchor not found; refusing to silently skip"
+s = s.replace(old, new, 1)
+open(p, 'w').write(s)
+print("CMakeLists updated (fatfs)")
+EOF
+fi
 
 echo "== muse_input.c (turn-gate hook) =="
 INP="$SDK/components/muse/muse_input.c"
