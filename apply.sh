@@ -125,24 +125,38 @@ s = s.replace(
   '''  espressif/esp_lcd_touch_spd2010:
     version: "^2.0.1"
     rules:
-      - if: "$CONFIG{MUSE_BOARD_ID} == \\"sensecap_watcher\\""''',
+      - if: "$CONFIG{MUSE_BOARD_ID} == \\\"sensecap_watcher\\\""''',
   '''  espressif/esp_lcd_touch_spd2010:
     version: "^2.0.1"
     rules:
-      - if: "$CONFIG{MUSE_BOARD_ID} == \\"sensecap_watcher\\""
+      - if: "$CONFIG{MUSE_BOARD_ID} == \\\"sensecap_watcher\\\""
   espressif/esp_lcd_touch_cst816s:
     version: "^1.0.0"
     rules:
-      - if: "$CONFIG{MUSE_BOARD_ID} == \\"smktec_s3_touch_lcd_154\\""''')
-# extend the lvgl adapter board list
-s = s.replace(
-  '\\"m5stack_stickc_plus2\\"]"',
-  '\\"m5stack_stickc_plus2\\", \\"smktec_s3_touch_lcd_154\\"]"')
+      - if: "$CONFIG{MUSE_BOARD_ID} == \\\"smktec_s3_touch_lcd_154\\\""''')
 open(p, 'w').write(s)
 print("idf_component.yml updated (cst816s)")
 EOF
 else
   echo "idf_component.yml already patched (cst816s)"
+fi
+# The lvgl-adapter board list gets its own guard: the old anchor (a neighbor
+# board) broke silently when upstream added boards to the list, so this must
+# stay re-runnable even after the cst816s patch applied.
+if grep -A3 'espressif/esp_lvgl_adapter:' "$YML" | grep -q 'smktec_s3_touch_lcd_154'; then
+  echo "idf_component.yml already patched (lvgl_adapter)"
+else
+  python3 - "$YML" <<'EOF'
+import re, sys
+p = sys.argv[1]
+s = open(p).read()
+# Anchor on the dep, never on neighboring boards (upstream changes those).
+pat = re.compile(r'(espressif/esp_lvgl_adapter:\n(?:[^\n]*\n)*?      - if: "\$CONFIG\{MUSE_BOARD_ID\} in \[)')
+s, n = pat.subn(r'\g<1>\\"smktec_s3_touch_lcd_154\\", ', s, count=1)
+assert n == 1, "esp_lvgl_adapter rule anchor not found; refusing to silently skip"
+open(p, 'w').write(s)
+print("idf_component.yml updated (lvgl_adapter)")
+EOF
 fi
 if ! grep -q "waveshare/qmi8658" "$YML"; then
   python3 - "$YML" <<'EOF'

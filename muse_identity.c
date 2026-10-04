@@ -14,7 +14,8 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
-#include "esp_system.h"   /* esp_random */
+#include "esp_random.h"   /* esp_random() (IDF v6: no longer via esp_system.h) */
+#include "esp_system.h"
 
 static const char *TAG = "muse_identity";
 
